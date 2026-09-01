@@ -140,7 +140,7 @@ net/netatalk3                # ports-extra
 security/sudo
 security/ca_root_nss
 dns/samba-nsupdate
-net/samba                    # ports-extra（truenas fork 4.19.6，⚠ 与上游 samba4xx 共存决策）
+net/samba                    # ports-extra（truenas fork 4.19.6+私有 VFS，详见 AUDIT 追加裁决；上游无可替换）
 misc/mc
 www/py-ws4py                 # ports-extra
 devel/git@lite
