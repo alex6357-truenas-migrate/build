@@ -7,18 +7,17 @@ BUILD15_ROOT:=	${.CURDIR:tA}
 .include "build/mk/repos.mk"
 .include "build/mk/patches.mk"
 .include "build/mk/world.mk"
+.include "build/mk/ports.mk"
+.include "build/mk/packages.mk"
+.include "build/mk/images.mk"
 
-ports:
-	@echo "TODO(P3-ports): poudriere overlay 装配 + bulk（mk/ports.mk 待写）"
+release: setup patches ports packages images
+	@echo "build15 release: staged into ${RELEASE_ROOT}（M1=release(7) 介质 + pkg repo）"
 
-packages:
-	@echo "TODO(P3-packages): pkgbase + pkg repo（mk/packages.mk 待写）"
-
-images:
-	@echo "TODO(P3-images): release(7) NAS 化 + mkisoimages（mk/images.mk 待写）"
-
-release: setup patches world kernel ports packages images
-	@echo "build15 release done (ports/packages/images 待 P3 实现)"
+# 一键产出：复刻 core-build release target 语义
+	@mkdir -p ${RELEASE_ROOT}/${MACHINE_ARCH}
+	@echo "[release] pkg repo: ${PKG_REPO}/final"
+	@echo "[release] images: ${M1_RELEASE_DIR}"
 
 clean:
 	rm -rf ${OBJS}

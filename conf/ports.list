@@ -1,0 +1,159 @@
+# ports.list — 构建期全量 port 清单（唯一真源）
+# 来源归并：core-build ports-installer.pyd + ports-system.pyd + ports-freenas.pyd。
+# 每行一个 "类目/名[@flavor]"；freenas/、truenas/ 类目的包由 ports-extra 提供。
+# 已过滤 fork 时代重复的项；与 2026Q3 基线对齐时若 origin 已不在上游，需确认改名。
+
+# ---- installer / 最小启动必需（原 ports-installer.pyd） ----
+sysutils/openzfs            # ⚠ overlay 版：fork 钉 zfs 2.2.5；若选上游 filesystems/ 版需改
+lang/python3
+lang/python
+databases/sqlite3
+databases/py-sqlite3
+databases/py-berkeleydb
+devel/py-six
+devel/py-libzfs             # ports-extra
+freenas/py-bsd              # ports-extra
+freenas/freenas-installer   # ports-extra
+
+# ---- 系统服务与工具（原 ports-system.pyd） ----
+ports-mgmt/pkg
+dns/bind-tools
+dns/dnsmasq
+textproc/jq
+archivers/liblz4
+archivers/lzo2
+archivers/pigz
+archivers/plzip
+archivers/7-zip
+security/easy-rsa
+security/stunnel
+comms/lrzsz
+sysutils/kiconvtool
+sysutils/iohyve
+sysutils/vm-bhyve
+sysutils/pciutils
+net/socat
+sysutils/pv
+sysutils/openseachest
+dns/inadyn-troglobit         # ports-extra
+editors/nano
+ftp/proftpd
+misc/cpuid
+net-mgmt/clog
+net/mosh
+net/wireguard-tools
+net-mgmt/sipcalc
+security/cyrus-sasl2-gssapi
+sysutils/scanlnk             # ports-extra
+sysutils/iocage
+security/pam_mkhomedir
+shells/ksh93
+shells/mksh
+shells/zsh
+sysutils/e2fsprogs
+sysutils/fusefs-libs
+sysutils/fusefs-ntfs
+sysutils/fusefs-s3fs
+sysutils/smartmontools
+net/libdnet
+sysutils/xe-guest-utilities
+security/gnupg
+www/apache24
+www/mod_mpm_itk
+sysutils/syslog-ng
+devel/gio-fam-backend
+sysutils/jailme
+graphics/graphite2
+converters/base64
+sysutils/arcconf
+sysutils/tw_cli
+sysutils/megacli
+sysutils/areca-cli           # ports-extra
+sysutils/hptcli
+net/ladvd
+ftp/wget
+benchmarks/iozone
+benchmarks/iperf
+benchmarks/iperf3
+benchmarks/netperf
+sysutils/ipmitool
+devel/py-daemon
+www/wgetpaste
+sysutils/sedutil             # ports-extra
+sysutils/sg3_utils
+sysutils/smp_utils
+net/trafshow
+net/py-s3cmd
+ftp/curl
+sysutils/lsof
+sysutils/grub2-bhyve         # ⚠ fork 持有 sysutils/grub2 系；上游已删 grub2-bhyve；P2b 决议
+sysutils/beadm
+sysutils/throttle            # ports-extra
+misc/xtail
+sysutils/edk2@bhyve
+benchmarks/fio
+sysutils/cmdwatch
+sysutils/cpu-microcode
+sysutils/htop
+sysutils/mcelog
+devel/py-xattr
+converters/convmv
+sysutils/ipfs-go
+misc/mmv
+misc/mbuffer
+sysutils/ncdu
+www/novnc
+www/novnc-websockify
+net/libvncserver
+devel/libhyve-remote         # ports-extra（bhyve-vnc patch 运行依赖）
+graphics/drm-kmod
+net/aquantia-atlantic-kmod
+net/realtek-re-kmod
+misc/py-pexpect
+devel/ctags
+devel/py-pyflakes
+security/openvpn
+editors/jed
+editors/vim@tiny
+devel/gdb
+net/nss-pam-ldapd-sasl
+security/openssh-portable
+net/unison@nox11
+net/rsync
+shells/bash
+shells/scponly
+emulators/open-vm-tools@nox11
+www/nginx
+net-mgmt/net-snmp
+sysutils/nut
+graphics/cairo
+x11-toolkits/pango
+print/harfbuzz
+databases/rrdtool
+net-mgmt/collectd5
+emulators/mtools
+net/py-python-ldap
+dns/py-dnspython
+devel/dbus
+sysutils/tmux
+net/netatalk3                # ports-extra
+security/sudo
+security/ca_root_nss
+dns/samba-nsupdate
+net/samba                    # ports-extra（truenas fork 4.19.6，⚠ 与上游 samba4xx 共存决策）
+misc/mc
+www/py-ws4py                 # ports-extra
+devel/git@lite
+devel/ipython
+
+# ---- TrueNAS 自身（原 ports-freenas.pyd） ----
+freenas/freenas-files
+freenas/pipewatcher
+freenas/freenas-migrate93
+freenas/freenas-migrate113
+freenas/freenas-webui        # P4 或被 freenas/webui-dist 取代
+freenas/py-middlewared       # 依赖链广播：py-netif/py-bsd/py-cam/py-libzfs...
+freenas/py-midcli
+freenas/arcsas
+freenas/firmware
+truenas/py-fenced

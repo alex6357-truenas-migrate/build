@@ -1,0 +1,17 @@
+# poudriere.conf.tmpl — build15 的 poudriere 配置模板
+# 占位符 @@BASEFS@@ 由 mk/ports.mk 的 poudriere-setup 替换。
+
+NO_ZFS=yes
+BASEFS=@@BASEFS@@
+USE_PORTLINT=no
+USE_TMPFS=yes
+DISTFILES_CACHE=@@BASEFS@@/distfiles
+PKG_REPO_FROM_HOST=yes
+CCACHE_DIR=
+ALLOW_NETWORK_ACCESS=		# 默认空：poudriere 环境断网；依赖 distcache 或 PRE_FETCH 钩子
+CHECK_CHANGED_OPTIONS=yes
+CHECK_CHANGED_DEPS=yes
+ATOMIC_PACKAGE_REPOSITORY=yes
+COMMIT_PACKAGES_ON_FAILURE=no
+KEEP_OLD_PACKAGES=yes
+KEEP_OLD_PACKAGES_COUNT=2
