@@ -4,7 +4,7 @@
 # 已过滤 fork 时代重复的项；与 2026Q3 基线对齐时若 origin 已不在上游，需确认改名。
 
 # ---- installer / 最小启动必需（原 ports-installer.pyd） ----
-sysutils/openzfs            # ⚠ overlay 版：fork 钉 zfs 2.2.5；若选上游 filesystems/ 版需改
+# （ZFS 已不再是 port：15.1 base 自带 OpenZFS 2.4.2，比 fork 2.2.5 新；删除 ports-extra/sysutils/openzfs{,-kmod}）
 lang/python3
 lang/python
 databases/sqlite3
@@ -36,6 +36,7 @@ net/socat
 sysutils/pv
 sysutils/openseachest
 dns/inadyn-troglobit         # ports-extra
+net/py-wsdd                  # WSD daemon（上游 @christgau 0.9 已含 rc.d/wsdd，替代 fork）
 editors/nano
 ftp/proftpd
 misc/cpuid
@@ -44,7 +45,6 @@ net/mosh
 net/wireguard-tools
 net-mgmt/sipcalc
 security/cyrus-sasl2-gssapi
-sysutils/scanlnk             # ports-extra
 sysutils/iocage
 security/pam_mkhomedir
 shells/ksh93
@@ -149,8 +149,6 @@ devel/ipython
 # ---- TrueNAS 自身（原 ports-freenas.pyd） ----
 freenas/freenas-files
 freenas/pipewatcher
-freenas/freenas-migrate93
-freenas/freenas-migrate113
 freenas/webui-dist           # P4 主线；freenas-webui（源码原地构建）仅备手动切换
 freenas/py-middlewared       # 依赖链广播：py-netif/py-bsd/py-cam/py-libzfs...
 freenas/py-midcli

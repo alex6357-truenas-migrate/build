@@ -68,9 +68,13 @@ build/
 | ---- | ---- |
 | os fork 不再直接进构建 | 13.3 时代 os fork 的全部有效内容已重做进 `patches/src`（12 patch）；构建直接以 upstream `releng/15.1` 为基线 |
 | ports 基线 = 上游新快照 + overlay | 放弃 truenas/ports fork；私有 port 收拢进 `ports-extra/`，Mk/少量调整进 `patches/ports/` |
-| 打包 = pkgbase + pkg(1) | 淘汰 freenas-pkgtools 的 tgz+manifest；更新走自签 pkg repo |
+| 打包 = pkgbase + pkg(1) | 淘汰 freenas-pkgtools 的 tgz+manifest；更新走自签 pkg repo（pkgtools/migrate93/113 已物理删除） |
 | webui 第一期不做现代化 | 用 `webui-dist` 预编译 dist 壳 port（P4）；后期单独阶段重写 |
 | iocage 保留 fork | fork 带上游没有的 tarfile 安全修复等；port 从 `../iocage` 种子或 GitHub 拉 fork 源（审计见 AUDIT-15.1.md） |
+| zfs 直接用 base 2.4.2 | fork（钉 2.2.5）删除；ports-extra 不再有 openzfs/openzfs-kmod |
+| wsdd 用上游 ports | `net/py-wsdd` 替代 fork |
+| scanlnk 剔除 | 无任何消费方 |
+| core-build 已删除 | 旧 python 构建系统不再保留参考 |
 | 零 python 编排层 | core-build 的 buildenv.py/dsl/*.pyd 全部废弃；运行时组件（middlewared、iocage）不受此限 |
 
 ## 随 FreeBSD 升级（新版本跟进清单）

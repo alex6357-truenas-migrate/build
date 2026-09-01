@@ -101,3 +101,39 @@
 
 ## freebsd-src / freebsd-ports（上游参考）
 - 角色：ref；仅用于基线锚定，不进构建制品。
+
+---
+
+## 追加裁决（P2b，逐用户要求）
+
+### zfs fork → 弃用（用 15.1 base 自带 2.4.2）
+- 事实：15.1 base 的 `sys/contrib/openzfs/meta` = **2.4.2**；2026Q3 ports `filesystems/openzfs` = **2.4.3**；fork 钉的是 2.2.5+iX patch（`GH_TAGNAME=4f2aa1382`）。
+- 结论：**删除 fork port 与 fork 源**。fork 时代的 iX 私有 zts 修复已滚入 2.4 主线（iX 上游化习惯）。删除 `REPO_ZFS`、`ports-extra/sysutils/openzfs{,-kmod}`、`ports.list` 中 `sysutils/openzfs` 行；`src.conf.build|boot` 中 `WITHOUT_ZFS` 移除，`world.mk` 的 `KERN_MODULES` 加 `zfs`。
+
+### samba fork → 保留（P6 再核）
+- 事实：fork = 4.19.6 钉 SHA + wscript 私有 patch + 自带 rc；2026Q3 上游有 samba416/419/420/422/423。
+- 判断：samba 是 TrueNAS ACL 核心（与 middleware winacl/persistence 深度耦合），离线无法逐 commit 核对 fork 修复是否已并入 4.2x；切换风险大且本期收益小（15.1 兼容 4.19.6 通过 ports 框架即可）。
+- 结论：**保留**。P6 在构建机用 `git ls-remote`/`git diff` 做一次 fork vs samba-team:master（或 samba423 tag）的判定，再决定是否需要上提。
+
+### wsdd fork → 换成上游 ports
+- 事实：上游 `net/py-wsdd @christgau 0.9` 自带 `rc.d/wsdd`（同款 rc 名）；middleware 只按名字 `freebsd_rc="wsdd"` 消费。
+- 结论：**删除** fork port（已删 `ports-extra/sysutils/py-wsdd`、`REPO_WSDD`），`ports.list` 加 `net/py-wsdd`。
+- 遗留：上游 0.9 vs fork 0195eff 的发行窗可能缺小补丁；影响面为 Windows 网络发现可见性，可接受。
+
+### sedutil → 保留（amotin fork）
+- 事实：上游 ports 无 `sysutils/sedutil`；上游仓库是 Drive-Trust-Alliance/sedutil，Python 重版在 `py-sedutil`（不兼容 CLI 使用语义）；amotin fork 含 freebsd/CLI 原生构建。
+- 结论：**保留** freenas 侧 fork port。
+
+### licenselib → 保留（仅 truenas 使用，且是产品功能）
+- 消费方：middleware `plugins/system.py`、`scripts/hadetect.py`、`freenas-debug/system/system.sh`（Enterprise 授权）；webui 无直接引用。
+- 结论：**保留**（纯 Python、风险低，见审计本体）。
+
+### scanlnk → 剔除
+- 消费方为 0（grep middleware 无引用）。上游只有作者 anodos325 本人仓，无"别家维护"。
+- 结论：**删除** `ports-extra/sysutils/scanlnk` 与 `ports.list` 行（已做）。
+
+### freenas-pkgtools、freenas-migrate93、freenas-migrate113 → 已物理删除
+- 关联点未动：middleware 中对这些的引用保留为代码层 TODO（`ix.rc.d/ix-update`、`plugins/config.py`、`freenas-files/files/pkg-install.in`、`py-middlewared/Makefile` 里 migrate 类 import）——属于 P3 middleware 收敛任务，不影响 build 层。
+
+### core-build → 已物理删除
+- 旧构建系统不再留在工作区（参考信息全在 build/AUDIT 与本文件中）。

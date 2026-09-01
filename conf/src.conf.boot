@@ -17,7 +17,6 @@ WITHOUT_NIS=yes                 # FIXME(15.1): nis/yp 自 15 移除（保留项�
 WITHOUT_NLS=yes
 WITHOUT_PMC=yes
 WITHOUT_VT=yes
-WITHOUT_ZFS=yes
 WITHOUT_MAKE=yes
 WITHOUT_MAN=yes
 WITHOUT_PROFILE=yes

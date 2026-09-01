@@ -7,8 +7,9 @@ KERN_MODULES?=	autofs bnxt cc cfiscsi ctl dtrace efirt evdev ext2fs firewire geo
 	linux linux64 linux_common mac_ntpd msdosfs_iconv ispfw/ispfw opensolaris pf pflog \
 	smbfs udf usb fusefs vmm netmap nmdm ntb nvdimm ioat toecore cxgb cxgbe dummynet \
 	hwpmc ibcore ipoib mlx4ib mlx5ib mthca qlnx qlxgbe qat qatfw iser fxp ice_ddp sis \
-	hpt27xx hptmv hptnr hptrr
+	hpt27xx hptmv hptnr hptrr zfs
 # FIXME(P3-15.1-audit): ntb/nvdimm/ioat/iser 等在 15.1 的存在性与 ixnvdimm(600) 联动核对
+# ZFS 删掉了 ports-extra/sysutils/openzfs{,-kmod}：依赖 base 15.1 的 OpenZFS 2.4.2。
 
 BUILD_ENV=	env -u DEBUG -u MAKEFLAGS MAKEOBJDIRPREFIX=${OBJS}
 SRC_MAKE_CONF=	${OBJS}/src.conf.merged
