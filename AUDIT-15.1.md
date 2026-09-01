@@ -60,7 +60,10 @@
 - 状态：**审计进行中**。
 
 ## iocage（iocage fork truenas/13.0-stable, d8b3d7e）
-- 状态：**审计进行中**；默认决策=用上游 ports 的 sysutils/iocage，P5 落地。
+- **P5 决策落地**：不携带 fork 仓库；直接用 ports 基线（2026Q3）里的 `sysutils/iocage`（PORTVERSION 1.13，freebsd/iocage releases）。
+  理由：15.1 的 jail(8)/ZFS 需随 ports 演进；truenas/13.0-stable 停在 13 时代。smoke 验证留 P6。
+- 细节审计（python 版本/绑定兼容）：**进行中**（子公司 2 部分）。
+- 必要动作：无额外 patch；`conf/ports.list` 已含 `sysutils/iocage`（来自原 ports-system.pyd 清单）。
 
 ## freenas-pkgtools
 - 状态：**审计进行中**；pkgbase 决策下将作为 legacy 收缩/淘汰。
