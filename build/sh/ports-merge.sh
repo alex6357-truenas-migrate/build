@@ -3,9 +3,9 @@
 # 处理：目录复制 + 分类 Makefile 的 SUBDIR 注册（若缺失）+ freenas/truenas 分类头文件
 set -eu
 
-BUILD15_ROOT=${BUILD15_ROOT:?}
-WORK_PORTS=${WORK_PORTS:-$BUILD15_ROOT/work/ports}
-EXTRA=${EXTRA:-$BUILD15_ROOT/ports-extra}
+BUILD_ROOT=${BUILD_ROOT:?}
+WORK_PORTS=${WORK_PORTS:-$BUILD_ROOT/work/ports}
+EXTRA=${EXTRA:-$BUILD_ROOT/ports-extra}
 
 [ -d "$WORK_PORTS/.git" ] || { echo "[ports-merge] ERROR: $WORK_PORTS missing; make setup" >&2; exit 1; }
 [ -d "$EXTRA" ] || { echo "[ports-merge] ERROR: ports-extra missing" >&2; exit 1; }
@@ -16,7 +16,7 @@ mkcategoriy() {
     _mdir=$WORK_PORTS/$_cat
     if [ ! -f "$_mdir/Makefile" ]; then
         mkdir -p "$_mdir"
-        { echo "# $_cat category (build15 overlay)"; echo ""; echo "COMMENT = TrueNAS ports"; echo ""; } >"$_mdir/Makefile"
+        { echo "# $_cat category (build overlay)"; echo ""; echo "COMMENT = TrueNAS ports"; echo ""; } >"$_mdir/Makefile"
     fi
     grep -qE '^\.include <bsd\.port\.(pre\.)?mk>' "$_mdir/Makefile" || {
         printf '\n.include <bsd.port.mk>\n' >>"$_mdir/Makefile"

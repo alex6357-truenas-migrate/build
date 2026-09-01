@@ -70,4 +70,4 @@ tar -C "$WORK/webui" -czf "$PKG" --exclude=.git dist
 
 echo "[webui-dist] done: $PKG"
 echo "[webui-dist] distinfo: $DIST"
-echo "接着执行：cp $OUT/distinfo <build15>/ports-extra/freenas/webui-dist/distinfo"
+echo "接着执行：cp $OUT/distinfo <build>/ports-extra/freenas/webui-dist/distinfo"

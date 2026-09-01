@@ -70,21 +70,21 @@ patches/
 cd /usr/src  # 或 freebsd-src worktree
 
 # MUST（按顺序）
-git am /path/to/nas-build/patches/must/100-bhyve-vnc/100-bhyve-vnc-libhyve-remote.patch
-git am /path/to/nas-build/patches/must/200-boot-lua/200-boot-lua-menu.patch
-git am /path/to/nas-build/patches/must/300-rc-mountd/300-rc-mountd.patch
+git am /path/to/nas-build（历史快照已删除，内容已进 build/patches/src）/must/100-bhyve-vnc/100-bhyve-vnc-libhyve-remote.patch
+git am /path/to/nas-build（历史快照已删除，内容已进 build/patches/src）/must/200-boot-lua/200-boot-lua-menu.patch
+git am /path/to/nas-build（历史快照已删除，内容已进 build/patches/src）/must/300-rc-mountd/300-rc-mountd.patch
 for p in 410-kern-conf-zvol-name 420-utimensat-birthtime 430-inode-gen-sysctl 440-ctl-ha-truncated; do
-  git am /path/to/nas-build/patches/must/400-kernel-misc/$p.patch
+  git am /path/to/nas-build（历史快照已删除，内容已进 build/patches/src）/must/400-kernel-misc/$p.patch
 done
 
 # RECOMMENDED
-git am /path/to/nas-build/patches/recommended/500-memmove-perf.patch
+git am /path/to/nas-build（历史快照已删除，内容已进 build/patches/src）/recommended/500-memmove-perf.patch
 
 # OPTIONAL（按目标硬件/产品形态决策是否应用）
-git am /path/to/nas-build/patches/optional/600-ixnvdimm/600-ixnvdimm.patch   # 仅有双控 NVDIMM 时
-git am /path/to/nas-build/patches/optional/700-rc-subr-revert.patch         # 若保留 ix-* 脚本兼容
-git am /path/to/nas-build/patches/optional/710-acpi-package-hack.patch      # 若遇 Supermicro NVDIMM
-git am /path/to/nas-build/patches/optional/720-yp-retries.patch            # 若需 NIS fail-fast
+git am /path/to/nas-build（历史快照已删除，内容已进 build/patches/src）/optional/600-ixnvdimm/600-ixnvdimm.patch   # 仅有双控 NVDIMM 时
+git am /path/to/nas-build（历史快照已删除，内容已进 build/patches/src）/optional/700-rc-subr-revert.patch         # 若保留 ix-* 脚本兼容
+git am /path/to/nas-build（历史快照已删除，内容已进 build/patches/src）/optional/710-acpi-package-hack.patch      # 若遇 Supermicro NVDIMM
+git am /path/to/nas-build（历史快照已删除，内容已进 build/patches/src）/optional/720-yp-retries.patch            # 若需 NIS fail-fast
 ```
 
 也可用 `patch -p1 < <patch>` 替代 `git am`。`git am` 保留作者信息；`patch -p1` 仅 apply 内容。

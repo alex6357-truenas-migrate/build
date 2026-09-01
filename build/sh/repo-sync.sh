@@ -1,12 +1,12 @@
 #!/bin/sh
-# repo-sync.sh — 按 repos.conf 拉取/同步 build15 的全部仓库
+# repo-sync.sh — 按 repos.conf 拉取/同步 build 的全部仓库
 # 语义对应 core-build 的 checkout.py：clone 缺失仓库、fetch 已存在仓库、检出 pin。
 # 零 python 依赖；仅 POSIX sh + git。
 set -eu
 
-BUILD15_ROOT=${BUILD15_ROOT:?}
+BUILD_ROOT=${BUILD_ROOT:?}
 WORK_ROOT=${WORK_ROOT:?}
-REPOS_CONF=${REPOS_CONF:-$BUILD15_ROOT/repos.conf}
+REPOS_CONF=${REPOS_CONF:-$BUILD_ROOT/repos.conf}
 CHECKOUT_SHALLOW=${CHECKOUT_SHALLOW:-}
 
 # shellcheck disable=SC1090
@@ -42,17 +42,30 @@ sync_one() {
         echo "[repo] update $_name ($_path)"
         git -C "$_dest" fetch origin --prune
     else
+        # 本地种子：nas-build/<path>（与 build/ 同级）存在时优先克隆本地副本，离线可跑
+        _seed=$BUILD_ROOT/../$_path
+        _remote=$_url
+        if [ -d "$_seed/.git" ]; then
+            echo "[repo] seed from local $_seed"
+            _remote=$(cd "$_seed" && pwd -P)
+        fi
         echo "[repo] clone $_name → $_path ($_ref)"
         _clone_opts=
-        # sha 不可直传 -b；分支可 --branch 缩小首拉数据量
+        # sha 不可直传 -b；分支可 --branch 缩小首拉数据量；本地种子不做 --depth
         if is_sha "$_ref"; then
             _clone_opts=""
         else
             _clone_opts="--branch $_ref --single-branch"
-            [ -n "$CHECKOUT_SHALLOW" ] && _clone_opts="$_clone_opts --depth 1"
+            if [ -z "$_seed" ] && [ -n "$CHECKOUT_SHALLOW" ]; then
+                _clone_opts="$_clone_opts --depth 1"
+            fi
         fi
         # shellcheck disable=SC2086
-        git clone $_clone_opts "$_url" "$_dest"
+        git clone $_clone_opts "$_remote" "$_dest"
+        # 从种子拉时把 origin 还原为真实上游，保证后续 update 走网络
+        if [ "$_remote" != "$_url" ]; then
+            git -C "$_dest" remote set-url origin "$_url"
+        fi
     fi
 
     if is_sha "$_ref"; then

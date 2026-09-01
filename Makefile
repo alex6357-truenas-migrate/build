@@ -1,7 +1,7 @@
-# build15 — TrueNAS Core × FreeBSD 15.1 顶层 Makefile
+# build — TrueNAS Core × FreeBSD 15.1 顶层 Makefile
 # 使用：详见 README.md。所有 target 仅依赖 bmake + POSIX sh + git。
 
-BUILD15_ROOT:=	${.CURDIR:tA}
+BUILD_ROOT:=	${.CURDIR:tA}
 
 .include "build/mk/common.mk"
 .include "build/mk/repos.mk"
@@ -12,7 +12,7 @@ BUILD15_ROOT:=	${.CURDIR:tA}
 .include "build/mk/images.mk"
 
 release: setup patches ports packages images
-	@echo "build15 release: staged into ${RELEASE_ROOT}（M1=release(7) 介质 + pkg repo）"
+	@echo "build release: staged into ${RELEASE_ROOT}（M1=release(7) 介质 + pkg repo）"
 
 # 一键产出：复刻 core-build release target 语义
 	@mkdir -p ${RELEASE_ROOT}/${MACHINE_ARCH}

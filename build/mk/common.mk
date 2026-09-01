@@ -1,22 +1,27 @@
 # build/mk/common.mk — 路径与公共变量（替代 core-build buildenv.py + env.pyd）
 
-.if !defined(BUILD15_ROOT)
-.error common.mk requires BUILD15_ROOT (include from top-level Makefile)
+.if !defined(BUILD_ROOT)
+.error common.mk requires BUILD_ROOT (include from top-level Makefile)
 .endif
 
+# FreeBSD 版本锚点（泛化：改 FREEBSD_BRANCH/FREEBSD_REL_VER/PORTS_QUARTER 即跟随新版本）
+.include "${BUILD_ROOT}/conf/freebsd.mk"
+
+.export FREEBSD_BRANCH FREEBSD_REL_VER PORTS_QUARTER
+
 # 资源目录
-CONF?=		${BUILD15_ROOT}/conf
-PATCHES_DIR?=	${BUILD15_ROOT}/patches
-EXTRA_PORTS?=	${BUILD15_ROOT}/ports-extra
-TOOLS_SH?=	${BUILD15_ROOT}/build/sh
+CONF?=		${BUILD_ROOT}/conf
+PATCHES_DIR?=	${BUILD_ROOT}/patches
+EXTRA_PORTS?=	${BUILD_ROOT}/ports-extra
+TOOLS_SH?=	${BUILD_ROOT}/build/sh
 
 # 工作目录
-WORK_ROOT?=	${BUILD15_ROOT}/work
+WORK_ROOT?=	${BUILD_ROOT}/work
 WORK_SRC?=	${WORK_ROOT}/src
 WORK_PORTS?=	${WORK_ROOT}/ports
-OBJS?=		${BUILD15_ROOT}/objs
-RELEASE_ROOT?=	${BUILD15_ROOT}/release
-PKG_REPO?=	${BUILD15_ROOT}/repo
+OBJS?=		${BUILD_ROOT}/objs
+RELEASE_ROOT?=	${BUILD_ROOT}/release
+PKG_REPO?=	${BUILD_ROOT}/repo
 
 # 并行与平台
 HW_NCPU!=	sysctl -n hw.ncpu 2>/dev/null || echo 2

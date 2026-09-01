@@ -53,20 +53,48 @@
   2. `patches/ports` 落定：waf.mk WAF_ENV、python.mk（重审）、NODEJS_DEFAULT（重审）、MOVED un-expire；
   3. 私有 port 目录名/分类对齐上游 2026 框架（openzfs → filesystems/、RUN_DEPENDS 路径调整）。
 
-## py-bsd（truenas/py-bsd master）
-- 状态：**审计进行中**。
+## py-bsd（truenas/py-bsd master @ be67e03, 2022-05）
+- 角色：middlewared 刚需的 BSD syscall Python 绑定（Cython）。
+- 15.1 风险：
+  - **确定断点**：`bsd/dialog.pyx` 链 `-ldialog`，而 15.1 base 只有 bsddialog（src15 `lib/` 无 libdialog、`usr.bin` 无 dialog）。→ 删 bsd.dialog 扩展；安装器 `src/freenas-installer/etc/install.sh` 里 20 处 `dialog(1)` 调用的壳层级也要迁移（或自带 `sysutils/dialog` 包）。
+  - **确定次断点**：`setup.py:29` 用 distutils，Python 3.12+ 已删；需迁 setuptools/pyproject。Cython 3 兼容性未验证（多数 .pyx 无 `language_level=3` 头且无 Py2 时代 `Cython.Distutils` 用法）。
+  - **defs.pxd 失真但当前有害度"低"**：kinfo_proc/sockstat/vnstat 等声明与 src15 头布局不一致，但 Cython 按真实头解析字段名，所访问字段均存在 → 编译可通过；作为 ABI 地雷列入 CI smoke test。
+  - 已核实保留可用的：statfs/nmount/EVFILT_*/thr_self/thr_set_name/DIOC*/sysctl KERN_PROC_* 等。
+- 决策：**保留但收缩**。动作：① 删 dialog/nis/bpf/extattr 等 middleware 未用的扩展；② setup.py 迁 setuptools/pyproject 去 six；③ ports-extra Makefile 从 `autoplist distutils` 改 `autoplist pep517`；④ 对 defs.pxd 做 sanitize 并建立字段级 ABI CI 核对。
+- 迁移等级：**中**（dialog 是唯一硬断点，Cython 3 风险待编译确认）。
 
-## licenselib（truenas/licenselib master）
-- 状态：**审计进行中**。
+## licenselib（truenas/licenselib master @ 8d5441c, 2025-11-10）
+- 角色：纯 Python 许可证编解码库（无 C 扩展）。
+- 15.1 风险：几乎为零；setup.py 老式 setuptools 格式、classifiers 残留 py2.7/3.4 文字（无功能问题）。
+- 决策：**保留**。动作：仅打包层现代化（pyproject + pep517）。
+- 迁移等级：**低**。
 
-## iocage（iocage fork truenas/13.0-stable, d8b3d7e）
-- **P5 决策落地**：不携带 fork 仓库；直接用 ports 基线（2026Q3）里的 `sysutils/iocage`（PORTVERSION 1.13，freebsd/iocage releases）。
-  理由：15.1 的 jail(8)/ZFS 需随 ports 演进；truenas/13.0-stable 停在 13 时代。smoke 验证留 P6。
-- 细节审计（python 版本/绑定兼容）：**进行中**（子公司 2 部分）。
-- 必要动作：无额外 patch；`conf/ports.list` 已含 `sysutils/iocage`（来自原 ports-system.pyd 清单）。
+## iocage fork（truenas/iocage truenas/13.0-stable @ d8b3d7e, 2024-11-18）
+- 角色：jail 管理器；middleware 插件生态依赖。
+- 关键事实：
+  - fork vs 上游 master 树 diff 只有 ~300 行，但含上游没有的 tarfile 提取安全修复（#356/#357/#360）、basejail/plugin 智能升级端点；
+  - fork 体全 CLI/subprocess 化（不绑 py-libzfs），`iocage_lib/zfs.py` 走 zfs/zpool CLI；
+  - 15.1 jail(8) 兼容性良好（`jail -f <conf> -c`、`persist`、`ioc-<uuid>` 命名、ipl/fib 均 OK）；唯一观察点是 `ioc_common.py` 版本解析对 "15.1" 的合法性（`float("15.1")` 正常）；
+  - middleware pin 的是 fork 源（`py-middlewared` port RUN_DEPENDS）。
+- 决策（P5 终审，**替代早先的"换上游 ports"**）：保留 fork。落地：`ports-extra/sysutils/iocage` 由 fork port 改写为 `USE_GITHUB truenas/iocage @ d8b3d7e...`，`USES=python`、`USE_PYTHON=autoplist pep517`，去 fastentrypoints/pytest-runner。IOCage 源仓库进 repos.conf（REPO_IOCAGE）。
+- 长期 TODO：把 fork 的担外 patch 上游化回 freebsd/iocage。
+- 迁移等级：**低**（配置层已落地）。
 
-## freenas-pkgtools
-- 状态：**审计进行中**；pkgbase 决策下将作为 legacy 收缩/淘汰。
+## iocage-ix-plugins（truenas master @ b9858e0, 2023-01）
+- 角色：iocage 插件运行时索引仓库（数据仓，非 OS 构件）。
+- 结论：**不进 nas-build**；与 OS 构建解耦。
+
+## freenas-pkgtools（truenas master @ 294a2ce, 冻结 3 年）
+- 角色：12→13.3 时代的 train/sequence/manifest 更新系统（pkgbase 迁移决策下大半过时）。
+- 不可替代资产（pkg 无等价）：
+  - `lib/Update.py:1403-1650` 的 boot environment 创建/迁移/trampoline；
+  - `lib/Manifest.py:42-54` 的 train×Sequence×Notice/EOL。
+- 外部硬依赖点：
+  - middleware `plugins/update_/{download,install,pending,trains}_freebsd.py` 等 6 个 import freenasOS；`utils/osc/freebsd/app.py:14`、`alert/source/update.py:7-8`；
+  - 安装器 `src/freenas-installer/etc/install.sh:1068`（freenas-install -P -M）；
+  - core-build 构建侧 create_package/create_manifest/freenas-release。
+- 决策：**收缩**。build 侧全淘汰换 `pkg create`/`pkg repo`/自签索引；运行侧保留 BE 层 + 薄 train manifest，其余换 `pkg check -s/-r`、`pkg-static -r <root> install`；middleware `*_freebsd.py` 改 pkg + 新 BE helper。certificates 留 1 对根证书作 repo 指纹来源。
+- 迁移等级：**高**（是 pkgbase 迁移中最大的运行时改造点）。
 
 ## ports fork（truenas/ports, 9461a3499b98, 13.3-stable）
 - 状态：**盘点进行中**（子代理 4 执行中/待结果回填）；产出 fork-only ports 清单 → ports-extra，Mk/关键 port 修改 → patches/ports 或 REMOVED。

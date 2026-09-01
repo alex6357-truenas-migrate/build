@@ -4,9 +4,9 @@
 # 幂等通过 manifest 判断（每条 patch 记一行 sha）；clean 时重置到基线。
 set -eu
 
-BUILD15_ROOT=${BUILD15_ROOT:?}
+BUILD_ROOT=${BUILD_ROOT:?}
 WORK_ROOT=${WORK_ROOT:?}
-REPOS_CONF=$BUILD15_ROOT/repos.conf
+REPOS_CONF=$BUILD_ROOT/repos.conf
 
 # shellcheck disable=SC1090
 . "$REPOS_CONF"
@@ -26,21 +26,21 @@ esac
 eval "_spec=\$${_repo_var}"
 set -- $_spec
 _base_ref=$2
-_pdir=$BUILD15_ROOT/patches/$kind
+_pdir=$BUILD_ROOT/patches/$kind
 _list=$(ls "$_pdir"/*.patch 2>/dev/null || true)
 
 if [ "$_cmd" = clean ]; then
     echo "[patch-$kind] reset to base $_base_ref"
     git -C "$_dest" reset --hard "$_base_ref" 2>/dev/null || \
         git -C "$_dest" checkout --detach "$_base_ref"
-    rm -f "$_dest/.build15-patchlog"
+    rm -f "$_dest/.build-patchlog"
     exit 0
 fi
 
 [ -d "$_dest/.git" ] || { echo "[patch-$kind] ERROR: $_dest missing; run make setup first" >&2; exit 1; }
 
-# 幂等：若 .build15-patchlog 存在且与当前 patch 序列的前缀一致则跳过已应用者
-_log=$_dest/.build15-patchlog
+# 幂等：若 .build-patchlog 存在且与当前 patch 序列的前缀一致则跳过已应用者
+_log=$_dest/.build-patchlog
 : >"$_log.tmp"
 
 for _p in $_list; do
@@ -53,7 +53,7 @@ for _p in $_list; do
     # mbox (format-patch 产物, 以 'From <sha> ' 开头) 走 git am；纯 diff 走 git apply + 手动 commit
     if head -1 "$_p" | grep -q '^From [0-9a-f]\{40\} '; then
         echo "[patch-$kind] am $_base"
-        git -C "$_dest" -c user.name=build15 -c user.email=build15@local \
+        git -C "$_dest" -c user.name=build -c user.email=build@local \
             am --3way --committer-date-is-author-date "$_p" || {
             git -C "$_dest" am --abort 2>/dev/null || true
             echo "[patch-$kind] FAILED: $_base" >&2
@@ -62,8 +62,8 @@ for _p in $_list; do
     else
         echo "[patch-$kind] apply $_base"
         git -C "$_dest" apply --3way "$_p" && \
-        git -C "$_dest" -c user.name=build15 -c user.email=build15@local \
-            commit -qam "build15: apply $_base" || {
+        git -C "$_dest" -c user.name=build -c user.email=build@local \
+            commit -qam "build: apply $_base" || {
             git -C "$_dest" reset --hard >/dev/null 2>&1 || true
             echo "[patch-$kind] FAILED: $_base" >&2
             exit 1

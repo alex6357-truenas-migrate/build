@@ -3,10 +3,10 @@
 # （对应 core-build 的 repo-manifest 产物；pkgbase 场景下用于可复现与审计）。
 set -eu
 
-BUILD15_ROOT=${BUILD15_ROOT:?}
+BUILD_ROOT=${BUILD_ROOT:?}
 WORK_ROOT=${WORK_ROOT:?}
-REPOS_CONF=${REPOS_CONF:-$BUILD15_ROOT/repos.conf}
-OUT=${OUT:-$BUILD15_ROOT/.repo-manifest}
+REPOS_CONF=${REPOS_CONF:-$BUILD_ROOT/repos.conf}
+OUT=${OUT:-$BUILD_ROOT/.repo-manifest}
 
 # shellcheck disable=SC1090
 . "$REPOS_CONF"
