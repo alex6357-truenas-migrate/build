@@ -1,0 +1,16 @@
+# TRUENAS-DEBUG — TRUENAS + 调试选项（由 core-build kernel/DEBUG 迁移）
+# P3 中内核配置做 15.1 选项审计时本文件一并更新。
+include TRUENAS
+
+options 	KDB			# Enable kernel debugger support.
+#options 	KDB_TRACE		# Print a stack trace for a panic.
+options 	DDB			# Support DDB.
+options 	GDB			# Support remote GDB.
+options 	DEADLKRES		# Enable the deadlock resolver
+options 	INVARIANTS		# Enable calls of extra sanity checking
+options 	INVARIANT_SUPPORT	# Extra sanity checks of internal structures, required by INVARIANTS
+options 	WITNESS			# Enable checks to detect deadlocks and cycles
+options 	WITNESS_SKIPSPIN	# Don't run witness on spinlocks for speed
+options 	MALLOC_DEBUG_MAXZONES=8	# Separate malloc(9) zones
+options		DEBUG_VFS_LOCKS		# enable VFS lock debugging
+options		ACPI_DEBUG		# include ACPI-debug code

@@ -1,0 +1,6 @@
+# src.conf.run — 安装到目标世界（= src.conf.build + run 附加项）
+# src.conf 层叠不天然支持 include；P3 的 mk/world.mk 用 cat 合并后传入。
+# 本文件只声明 run 增量：
+WITHOUT_RCS=yes
+WITHOUT_TOOLCHAIN=yes
+WITHOUT_INSTALLLIB=yes

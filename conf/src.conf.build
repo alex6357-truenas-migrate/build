@@ -1,0 +1,43 @@
+# src.conf.build — 世界构建基线（由 core-build config.pyd make_conf_build 迁移）
+# 每行一个 src.conf(5) 兼容赋值。FIXME 标记 = 15.1 已删除/改名，P3 审计时删除或替换。
+
+WITHOUT_ATM=yes
+WITHOUT_BLUETOOTH=yes
+WITHOUT_BSDINSTALL=yes
+WITHOUT_BSNMP=yes
+WITHOUT_CALENDAR=yes
+WITHOUT_CTM=yes                 # FIXME(15.1): ctm 已从 15.x 移除，选项是否存在待确认
+WITHOUT_CUSE=yes
+WITHOUT_DICT=yes
+WITHOUT_FORTRAN=yes             # FIXME(15.1): gcc/fortran 已自 13 移除，选项是否仍存在待确认
+WITHOUT_FREEBSD_UPDATE=yes
+WITHOUT_GAMES=yes
+WITHOUT_GCOV=yes
+WITHOUT_GPIB=yes                # FIXME(15.1): gpib 是否仍在
+WITHOUT_HTML=yes
+WITHOUT_IPFILTER=yes
+WITHOUT_IPX=yes                 # FIXME(15.1): netipx 已从 15.0 移除，选项应删
+WITHOUT_LIB32=yes
+WITHOUT_LIBKSE=yes              # FIXME(15.1): libkse 早已移除，选项应删
+WITHOUT_LPR=yes
+WITHOUT_NDIS=yes
+WITHOUT_NLS=yes
+WITHOUT_OBJC=yes
+WITH_OPENSSH_NONE_CIPHER=yes
+WITHOUT_PC_SYSINSTALL=yes       # FIXME(15.1): 早已移除，选项应删
+WITHOUT_PPP=yes
+WITHOUT_RCMDS=yes
+WITHOUT_SENDMAIL=yes
+WITHOUT_SVNLITE=yes             # FIXME(15.1): svnlite 已自 14 移除，选项应删
+WITHOUT_SYSCONS=yes             # FIXME(15.1): syscons 已自 15 移除，选项应删
+WITHOUT_SYSINSTALL=yes
+WITHOUT_WIRELESS=yes
+WITHOUT_WPA_SUPPLICANT_EAPOL=yes
+WITHOUT_ZFS=yes
+WITHOUT_CLANG_FULL=yes
+WITHOUT_PROFILE=yes
+WITHOUT_TESTS=yes
+
+# 附加 CFLAGS / 本地目录
+CFLAGS+=-DNS_REREAD_CONF
+LOCAL_DIRS=share/examples/ses tools/tools/cxgbtool tools/tools/cxgbetool
