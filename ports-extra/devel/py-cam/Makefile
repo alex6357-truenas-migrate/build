@@ -16,7 +16,7 @@ USES=		python
 USE_PYTHON=	autoplist distutils cython
 
 USE_GITHUB=     yes
-GH_ACCOUNT=	freenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_PROJECT=	py-cam
 GH_TAGNAME=	91f9b783e3e34e9370b3349e26c7e572b487c575
 

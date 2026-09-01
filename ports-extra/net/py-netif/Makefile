@@ -13,7 +13,7 @@ RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}bsd>0:devel/py-bsd@${PY_FLAVOR}
 
 USES=		python
 USE_GITHUB=	yes
-GH_ACCOUNT=	truenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_PROJECT=	py-netif
 GH_TAGNAME=	9298aa9
 USE_PYTHON=	autoplist cython distutils

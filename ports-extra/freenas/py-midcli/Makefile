@@ -17,7 +17,7 @@ RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}middlewared>0:freenas/py-middlewared@${FLAVO
 		${PYTHON_PKGNAMEPREFIX}prompt-toolkit>0:devel/py-prompt-toolkit@${FLAVOR}
 
 USE_GITHUB=	yes
-GH_ACCOUNT=	freenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_PROJECT=	midcli
 GH_TAGNAME=	5ac8045e9f1f4a6cee30fbc698df8cb01f6e9d75
 

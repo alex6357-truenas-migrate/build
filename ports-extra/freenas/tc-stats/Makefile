@@ -13,7 +13,7 @@ COMMENT=	TrueCommand Stats Collection Engine
 NO_BUILD=	YES
 
 USE_GITHUB=     yes
-GH_ACCOUNT=     freenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_PROJECT=     truecommand-stats
 
 .include <bsd.port.pre.mk>

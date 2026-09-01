@@ -24,7 +24,7 @@ TESTS_DESC=	Install the ZFS Test Suite
 OPTIONS_SUB=	yes
 
 USE_GITHUB=	yes
-GH_ACCOUNT=	truenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_PROJECT=	zfs
 GH_TAGNAME=	4f2aa1382
 

@@ -14,7 +14,7 @@ LICENSE=	BSD2CLAUSE
 RUN_DEPENDS=	${PY_ENUM34}
 
 USE_GITHUB=     yes
-GH_ACCOUNT=	truenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_PROJECT=	py-libzfs
 GH_TAGNAME=	98fbfdc924c3abbf15e7bb090a638b763c5769a3
 

@@ -27,7 +27,7 @@ RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}click>=6.7:devel/py-click@${PY_FLAVOR} \
 CONFLICTS=	py-iocage-[0-9]* iocage-[0-9]* iocage-devel-[0-9]*
 
 USE_GITHUB=	yes
-GH_ACCOUNT=	truenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_PROJECT=	iocage
 GH_TAGNAME=	d8b3d7e11256db59a98c588259eec5637ec92123
 

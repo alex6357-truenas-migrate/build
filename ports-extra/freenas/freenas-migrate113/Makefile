@@ -13,7 +13,7 @@ RUN_DEPENDS=	python>0:${PORTSDIR}/lang/python
 
 USES=		python
 USE_GITHUB=	yes
-GH_ACCOUNT=	freenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_TAGNAME=	72778332bc0f5bf83a9db6039e82244d25f54580
 
 NO_BUILD=	yes

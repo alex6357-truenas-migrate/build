@@ -12,7 +12,7 @@ COMMENT=	Python WS-Discovery implementation
 USES=		python:3.6+
 USE_PYTHON=	distutils
 USE_GITHUB=	yes
-GH_ACCOUNT=	freenas	
+GH_ACCOUNT=	alex6357-truenas-migrate	
 GH_PROJECT=	wsdd
 GH_TAGNAME=	0195eff4972dd5ef65c050e312f5677cda0617ec	
 

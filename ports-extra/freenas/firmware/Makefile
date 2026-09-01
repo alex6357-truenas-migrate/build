@@ -9,7 +9,7 @@ MAINTAINER=	dev@ixsystems.com
 COMMENT=	Firmware files
 
 USE_GITHUB=	yes
-GH_TUPLE+=	freenas:firmware:86926bb
+GH_TUPLE+=	alex6357-truenas-migrate:firmware:86926bb
 
 NO_BUILD=	yes
 

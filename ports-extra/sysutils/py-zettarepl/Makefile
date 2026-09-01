@@ -12,7 +12,7 @@ COMMENT=	Cross-platform ZFS replication solution
 USES=		python:3.6+
 USE_PYTHON=	autoplist distutils
 USE_GITHUB=	yes
-GH_ACCOUNT=	truenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_TAGNAME=	47fc058e7bf332d282724458b582212c8b82f08f
 
 RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}coloredlogs>0:devel/py-coloredlogs@${PY_FLAVOR} \

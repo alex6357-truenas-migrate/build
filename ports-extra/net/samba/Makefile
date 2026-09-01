@@ -9,7 +9,7 @@ DISTNAME=			${SAMBA4_DISTNAME}
 USE_LOCALE=			en_US.UTF-8
 
 USE_GITHUB=			yes
-GH_ACCOUNT=			truenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 GH_TAGNAME=			4fec43c0c0155240da48c33ce7dc1abcf7d8c716
 
 MAINTAINER=		 	awalker@ixsystems.com

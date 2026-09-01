@@ -31,7 +31,7 @@ LIB_FILES=	lib/libhyverem.so.1	\
 PLIST_DIRS=	${LOCALBASE}/include/libhyverem
 
 USE_GITHUB=	yes
-GH_ACCOUNT=	freenas
+GH_ACCOUNT=	alex6357-truenas-migrate
 
 USE_LDCONFIG=	yes
 
