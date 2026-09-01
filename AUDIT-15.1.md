@@ -104,6 +104,15 @@
 
 ---
 
+## 上游追踪策略（UPSTREAMS）
+
+详见 `UPSTREAMS.md`。核心规则：
+- truenas 仍维护：middleware/webui/licenselib/py-bsd/samba/py-libzfs/zettarepl/midcli/truecommand-stats
+- truenas 已停维护的 CORE-only：iocage、py-netif、py-cam → 追 **freecore-project**（GitHub 仓库为 release 镜像；开发主体在 Codeberg）
+- freecore 不维护的功能位（VNC 用的 `py-bhyve`/`libhyve-remote`、SED 的 `sedutil`、scanlnk、licenselib、wsdd）：自持有 fork 或纯上游 ports。
+
+---
+
 ## 追加裁决（P2b，逐用户要求）
 
 ### zfs fork → 弃用（用 15.1 base 自带 2.4.2）
