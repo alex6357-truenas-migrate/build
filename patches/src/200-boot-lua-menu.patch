@@ -1,0 +1,399 @@
+From 094f4725ec0e23c3c373198eb433cf74de132eb0 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 15:43:36 +0800
+Subject: [PATCH] boot-lua: integrate TrueNAS boot menu customizations onto
+ 15.1
+
+Integration of TrueNAS boot/loader patches rebased onto FreeBSD 15.1:
+- 4ee6e5d3202 pmbr-datadisk: TrueNAS data disk protective MBR (new files)
+- e333bed4417 NAS-102571: Port boot menus to Lua (serialboot, product name,
+  multi/single serial entries, wider menu frame)
+- 638ffd167b6 Reduce merge conflict (menu_entries refactor)
+- 7700892abcf Fix EFI serial console selection (comconsole,efi vs vidconsole)
+- 67e33322a1a Detect EFI serial port (efi_8250_uid -> comconsole only)
+- bc48c1bede3 Fall back to FreeBSD product name if unset (productname())
+
+Rebase notes vs 15.1:
+- 15.1 menu.lua/welcome.entries adds upstream chainload/vendor/loader_needs_upgrade
+  entries; preserved (TrueNAS serialboot/product/serial entries coexist).
+- 15.1 drawer.lua geometry upstream-drifted; TrueNAS frame widened to 75x14
+  (y=9) for product-name menu text, kept.
+- New pmbr-datadisk files taken verbatim from os HEAD.
+---
+ stand/i386/Makefile                      |   1 +
+ stand/i386/pmbr-datadisk/Makefile        |  15 +++
+ stand/i386/pmbr-datadisk/pmbr-datadisk.S | 117 ++++++++++++++++++++++
+ stand/lua/drawer.lua                     |   6 +-
+ stand/lua/menu.lua                       | 120 +++++++++--------------
+ 5 files changed, 185 insertions(+), 74 deletions(-)
+ create mode 100644 stand/i386/pmbr-datadisk/Makefile
+ create mode 100644 stand/i386/pmbr-datadisk/pmbr-datadisk.S
+
+diff --git a/stand/i386/Makefile b/stand/i386/Makefile
+index 299e070d8cd5..a9dbad7b5a4f 100644
+--- a/stand/i386/Makefile
++++ b/stand/i386/Makefile
+@@ -10,6 +10,7 @@ SUBDIR.yes+=	.WAIT
+ 
+ SUBDIR.yes+=	mbr pmbr boot0 boot0sio boot2 cdboot gptboot \
+ 		isoboot
++SUBDIR.yes+=	pmbr-datadisk
+ 
+ SUBDIR.${MK_FORTH}+= loader_4th
+ SUBDIR.${MK_LOADER_LUA}+= loader_lua
+diff --git a/stand/i386/pmbr-datadisk/Makefile b/stand/i386/pmbr-datadisk/Makefile
+new file mode 100644
+index 000000000000..662f97061e54
+--- /dev/null
++++ b/stand/i386/pmbr-datadisk/Makefile
+@@ -0,0 +1,15 @@
++# $FreeBSD$
++
++PROG=	pmbr-datadisk
++STRIP=
++BINMODE=${NOBINMODE}
++SRCS=	${PROG}.S
++
++BOOT_MBR_FLAGS?=	0
++
++ORG=	0x600
++
++ACFLAGS+=-Wa,-defsym,FLAGS=${BOOT_MBR_FLAGS}
++LDFLAGS+=${LDFLAGS_BIN}
++
++.include <bsd.prog.mk>
+diff --git a/stand/i386/pmbr-datadisk/pmbr-datadisk.S b/stand/i386/pmbr-datadisk/pmbr-datadisk.S
+new file mode 100644
+index 000000000000..cf16ae91c29b
+--- /dev/null
++++ b/stand/i386/pmbr-datadisk/pmbr-datadisk.S
+@@ -0,0 +1,117 @@
++#-
++# Copyright (c) 2007 Yahoo!, Inc.
++# All rights reserved.
++# Written by: John Baldwin <jhb@FreeBSD.org>
++#
++# Redistribution and use in source and binary forms, with or without
++# modification, are permitted provided that the following conditions
++# are met:
++# 1. Redistributions of source code must retain the above copyright
++#    notice, this list of conditions and the following disclaimer.
++# 2. Redistributions in binary form must reproduce the above copyright
++#    notice, this list of conditions and the following disclaimer in the
++#    documentation and/or other materials provided with the distribution.
++# 3. Neither the name of the author nor the names of any co-contributors
++#    may be used to endorse or promote products derived from this software
++#    without specific prior written permission.
++#
++# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
++# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++# ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
++# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++# SUCH DAMAGE.
++#
++# From FreeBSD: head/sys/boot/i386/pmbr/pmbr.s 173957 2007-11-26 21:29:59Z jhb
++#
++# Partly from: src/sys/boot/i386/mbr/mbr.s 1.7
++
++# A 512 byte PMBR boot manager that looks for a FreeBSD boot GPT partition
++# and boots it.
++
++		.set LOAD,0x7c00		# Load address
++		.set EXEC,0x600 		# Execution address
++		.set MAGIC,0xaa55		# Magic: bootable
++		.set SECSIZE,0x200		# Size of a single disk sector
++		.set DISKSIG,440		# Disk signature offset
++		.set STACK,EXEC+SECSIZE*4	# Stack address
++		.set GPT_ADDR,STACK		# GPT header address
++		.set GPT_SIG,0
++		.set GPT_SIG_0,0x20494645
++		.set GPT_SIG_1,0x54524150
++		.set GPT_MYLBA,24
++		.set GPT_PART_LBA,72
++		.set GPT_NPART,80
++		.set GPT_PART_SIZE,84
++		.set PART_ADDR,GPT_ADDR+SECSIZE	# GPT partition array address
++		.set PART_TYPE,0
++		.set PART_START_LBA,32
++		.set PART_END_LBA,40
++
++		.set NHRDRV,0x475		# Number of hard drives
++
++		.globl start			# Entry point
++		.code16
++
++#
++# Setup the segment registers for flat addressing and setup the stack.
++#
++start:		cld				# String ops inc
++		xorw %ax,%ax			# Zero
++		movw %ax,%es			# Address
++		movw %ax,%ds			#  data
++		movw %ax,%ss			# Set up
++		movw $STACK,%sp			#  stack
++#
++# Relocate ourself to a lower address so that we have more room to load
++# other sectors.
++# 
++		movw $main-EXEC+LOAD,%si	# Source
++		movw $main,%di			# Destination
++		movw $SECSIZE-(main-start),%cx	# Byte count
++		rep				# Relocate
++		movsb				#  code
++#
++# Jump to the relocated code.
++#
++		jmp main-LOAD+EXEC		# To relocated code
++
++main:		movw $msg_datadisk,%si
++		jmp putstr
++
++#
++# Output an ASCIZ string to the console via the BIOS.
++# 
++putstr.0:	movw $0x7,%bx	 		# Page:attribute
++		movb $0xe,%ah			# BIOS: Display
++		int $0x10			#  character
++putstr: 	lodsb				# Get character
++		testb %al,%al			# End of string?
++		jnz putstr.0			# No
++putstr.1:	jmp putstr.1			# Await reset
++
++msg_datadisk:	.asciz "This is a TrueNAS data disk and can not boot system.  System halted."
++
++boot_uuid:	.long 0x83bd6b9d
++		.word 0x7f41
++		.word 0x11dc
++		.byte 0xbe
++		.byte 0x0b
++		.byte 0x00
++		.byte 0x15
++		.byte 0x60
++		.byte 0xb8
++		.byte 0x4f
++		.byte 0x0f
++
++		.org DISKSIG,0x90
++sig:		.long 0				# OS Disk Signature
++		.word 0				# "Unknown" in PMBR
++
++partbl: 	.fill 0x10,0x4,0x0		# Partition table
++		.word MAGIC			# Magic number
+diff --git a/stand/lua/drawer.lua b/stand/lua/drawer.lua
+index 1c03ed93f00a..ab6078a9be50 100644
+--- a/stand/lua/drawer.lua
++++ b/stand/lua/drawer.lua
+@@ -534,9 +534,9 @@ logodefs = {
+ }
+ 
+ brand_position = {x = 2, y = 1}
+-logo_position = {x = 40, y = 10}
+-menu_position = {x = 5, y = 10}
+-frame_size = {w = 39, h = 14}
++logo_position = {x = 46, y = 4}
++menu_position = {x = 5, y = 9}
++frame_size = {w = 75, h = 14}
+ default_shift = {x = 0, y = 0}
+ shift = default_shift
+ 
+diff --git a/stand/lua/menu.lua b/stand/lua/menu.lua
+index fb0645eb46ba..4ae8a997042c 100644
+--- a/stand/lua/menu.lua
++++ b/stand/lua/menu.lua
+@@ -3,6 +3,7 @@
+ --
+ -- Copyright (c) 2015 Pedro Souza <pedrosouza@freebsd.org>
+ -- Copyright (c) 2018 Kyle Evans <kevans@FreeBSD.org>
++-- Copyright (c) 2019 iXsystems, Inc.
+ -- All rights reserved.
+ --
+ -- Redistribution and use in source and binary forms, with or without
+@@ -61,8 +62,26 @@ local function bootenvSet(env)
+ 	end
+ end
+ 
+-local function multiUserPrompt()
+-	return loader.getenv("loader_menu_multi_user_prompt") or "Multi user"
++local function serialboot()
++	if core.isUEFIBoot() then
++		if loader.getenv("efi_8250_uid") then
++			-- Use only comconsole if an efi serial port is present
++			-- so we don't duplicate our output in loader.
++			loader.setenv("console", "comconsole")
++		else
++			loader.setenv("console", "comconsole,efi")
++		end
++	else
++		loader.setenv("console", "comconsole,vidconsole")
++	end
++	loader.setenv("comconsole_speed", "115200")
++	loader.setenv("boot_multicons", "YES")
++	loader.setenv("boot_serial", "YES")
++	core.boot()
++end
++
++local function productname()
++	return loader.getenv("product") or "FreeBSD"
+ end
+ 
+ -- Module exports
+@@ -220,36 +239,19 @@ menu.boot_options = {
+ menu.welcome = {
+ 	entries = function()
+ 		local menu_entries = menu.welcome.all_entries
+-		local multi_user = menu_entries.multi_user
+-		local single_user = menu_entries.single_user
+ 		local boot_entry_1, boot_entry_2
+ 		if core.isSingleUserBoot() then
+-			-- Swap the first two menu items on single user boot.
+-			-- We'll cache the alternate entries for performance.
+-			local alts = menu_entries.alts
+-			if alts == nil then
+-				single_user = core.deepCopyTable(single_user)
+-				multi_user = core.deepCopyTable(multi_user)
+-				single_user.name = single_user.alternate_name
+-				multi_user.name = multi_user.alternate_name
+-				menu_entries.alts = {
+-					single_user = single_user,
+-					multi_user = multi_user,
+-				}
+-			else
+-				single_user = alts.single_user
+-				multi_user = alts.multi_user
+-			end
+-			boot_entry_1, boot_entry_2 = single_user, multi_user
++			boot_entry_1 = menu_entries.single_user
++			boot_entry_2 = menu_entries.single_serial
+ 		else
+-			boot_entry_1, boot_entry_2 = multi_user, single_user
++			boot_entry_1 = menu_entries.multi_user
++			boot_entry_2 = menu_entries.multi_serial
+ 		end
+ 		return {
+ 			boot_entry_1,
+ 			boot_entry_2,
+ 			menu_entries.prompt,
+ 			menu_entries.reboot,
+-			menu_entries.console,
+ 			{
+ 				entry_type = core.MENU_SEPARATOR,
+ 			},
+@@ -266,9 +268,8 @@ menu.welcome = {
+ 				name = "Options:",
+ 			},
+ 			menu_entries.boot_options,
+-			menu_entries.zpool_checkpoints,
+ 			menu_entries.boot_envs,
+-			menu_entries.chainload,
++menu_entries.chainload,
+ 			menu_entries.vendor,
+ 			{
+ 				entry_type = core.MENU_SEPARATOR,
+@@ -279,16 +280,9 @@ menu.welcome = {
+ 	all_entries = {
+ 		multi_user = {
+ 			entry_type = core.MENU_ENTRY,
+-			name = function()
+-				return color.highlight("B") .. "oot " ..
+-				    multiUserPrompt() .. " " ..
+-				    color.highlight("[Enter]")
+-			end,
+-			-- Not a standard menu entry function!
+-			alternate_name = function()
+-				return color.highlight("B") .. "oot " ..
+-				    multiUserPrompt()
+-			end,
++			name = color.highlight("B") .. "oot " ..
++			    productname() .. " " ..
++			    color.highlight("[Enter]"),
+ 			func = function()
+ 				core.setSingleUser(false)
+ 				core.boot()
+@@ -297,25 +291,35 @@ menu.welcome = {
+ 		},
+ 		single_user = {
+ 			entry_type = core.MENU_ENTRY,
+-			name = "Boot " .. color.highlight("S") .. "ingle user",
+-			-- Not a standard menu entry function!
+-			alternate_name = "Boot " .. color.highlight("S") ..
+-			    "ingle user " .. color.highlight("[Enter]"),
++			name = color.highlight("B") .. "oot " ..
++			    productname() .. " (Single User) " ..
++			    color.highlight("[Enter]"),
+ 			func = function()
+ 				core.setSingleUser(true)
+ 				core.boot()
+ 			end,
+-			alias = {"s", "S"},
++			alias = {"b", "B"},
+ 		},
+-		console = {
++		multi_serial = {
+ 			entry_type = core.MENU_ENTRY,
+-			name = function()
+-				return color.highlight("C") .. "ons: " .. core.getConsoleName()
++			name = "Boot " .. productname() ..
++			    " (" .. color.highlight("S") .. "erial Console)",
++			func = function()
++				core.setSingleUser(false)
++				serialboot()
+ 			end,
++			alias = {"s", "S"},
++		},
++		single_serial = {
++			entry_type = core.MENU_ENTRY,
++			name = "Boot " .. productname() ..
++			    " (" .. color.highlight("S") .. "erial Console," ..
++			    " Single User)",
+ 			func = function()
+-				core.nextConsoleChoice()
++				core.setSingleUser(true)
++				serialboot()
+ 			end,
+-			alias = {"c", "C"},
++			alias = {"s", "S"},
+ 		},
+ 		prompt = {
+ 			entry_type = core.MENU_RETURN,
+@@ -368,32 +372,6 @@ menu.welcome = {
+ 			submenu = menu.boot_options,
+ 			alias = {"o", "O"},
+ 		},
+-		zpool_checkpoints = {
+-			entry_type = core.MENU_ENTRY,
+-			name = function()
+-				local rewind = "No"
+-				if core.isRewinded() then
+-					rewind = "Yes"
+-				end
+-				return "Rewind ZFS " .. color.highlight("C") ..
+-					"heckpoint: " .. rewind
+-			end,
+-			func = function()
+-				core.changeRewindCheckpoint()
+-				if core.isRewinded() then
+-					bootenvSet(
+-					    core.bootenvDefaultRewinded())
+-				else
+-					bootenvSet(core.bootenvDefault())
+-				end
+-				config.setCarouselIndex("be_active", 1)
+-			end,
+-			visible = function()
+-				return core.isZFSBoot() and
+-				    core.isCheckpointed()
+-			end,
+-			alias = {"c", "C"},
+-		},
+ 		boot_envs = {
+ 			entry_type = core.MENU_SUBMENU,
+ 			visible = function()
+-- 
+2.55.0.windows.3
+

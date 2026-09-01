@@ -1,0 +1,83 @@
+From 7b89ac411091fb4d0de9fd21fc8d71be5acfb889 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 20:59:37 +0800
+Subject: [PATCH] optional: revert rc.subr MFC r351863 ${name}_env export
+ (abf14b58ac7) [CONFLICT POINT]
+
+This is a CONFLICT POINT decision: 15.1 upstream retains MFC r351863
+(rc.subr honors ${name}_env when a custom *_cmd is defined, exporting
+it via 'eval "export -- $_env"'). TrueNAS reverted it (abf14b58ac7,
+ryan@ixsystems) because ix-* rc scripts do their own env handling and
+the 'export -- $_env' sh-builtin has variable-name limitations that
+break them.
+
+Rebase decision: KEEP the TrueNAS revert (both call sites).
+15.1 added a second export site in the _offcmd branch (line ~1743) that
+did not exist at 13.3; this rebase reverts BOTH sites (1365-1367 and
+1742-1744) to fully honor the TrueNAS intent of 'rc.subr does not auto-
+export ${name}_env'. The surrounding 15.1 run_rc_command additions
+(rc_trace, svcj jailing, _run_rc_setup/_run_rc_precmd refactor) are all
+preserved -- only the two 3-line export blocks are removed.
+
+rc.subr.8: drop the paragraph documenting the export limitation.
+
+Reviewers who prefer upstream behavior can skip this patch and instead
+adapt ix-* rc scripts to the upstream export semantics.
+---
+ libexec/rc/rc.subr       |  6 ------
+ share/man/man8/rc.subr.8 | 14 ++------------
+ 2 files changed, 2 insertions(+), 18 deletions(-)
+
+diff --git a/libexec/rc/rc.subr b/libexec/rc/rc.subr
+index 4e19d10f5e4e..37d0cc923a4e 100644
+--- a/libexec/rc/rc.subr
++++ b/libexec/rc/rc.subr
+@@ -1362,9 +1362,6 @@ run_rc_command()
+ 			if [ "$_cmd" != : ]; then
+ 				rc_trace 1 "$_cmd"
+ 			fi
+-			if [ -n "$_env" ]; then
+-				eval "export -- $_env"
+-			fi
+ 
+ 			if [ "${_rc_svcj}" != jailing ]; then
+ 				# service can redefine all so
+@@ -1739,9 +1736,6 @@ _run_rc_offcmd()
+ {
+ 	eval _offcmd=\$${name}_offcmd
+ 	if [ -n "$_offcmd" ]; then
+-		if [ -n "$_env" ]; then
+-			eval "export -- $_env"
+-		fi
+ 		debug "run_rc_command: ${name}_offcmd: $_offcmd $rc_extra_args"
+ 		eval "$_offcmd $rc_extra_args"
+ 		_return=$?
+diff --git a/share/man/man8/rc.subr.8 b/share/man/man8/rc.subr.8
+index 45a9e9a684cd..22e5340706e3 100644
+--- a/share/man/man8/rc.subr.8
++++ b/share/man/man8/rc.subr.8
+@@ -710,19 +710,9 @@ is mounted.
+ A list of environment variables to run
+ .Va command
+ with.
+-Those variables will be passed as arguments to the
++This will be passed as arguments to the
+ .Xr env 1
+-utility unless
+-.Ar argument Ns Va _cmd
+-is defined.
+-In that case the contents of
+-.Va ${name}_env
+-will be exported via the
+-.Xr export 1
+-builtin of
+-.Xr sh 1 ,
+-which puts some limitations on the names of variables
+-(e.g., a variable name may not start with a digit).
++utility.
+ .It Va ${name}_env_file
+ A file to source for environmental variables to run
+ .Va command
+-- 
+2.55.0.windows.3
+

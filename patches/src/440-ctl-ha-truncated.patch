@@ -1,0 +1,32 @@
+From 96d9656c32f360109a64ee3a3757dbd7b4315514 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 20:50:38 +0800
+Subject: [PATCH] kernel-misc: CTL HA do not kill connection on truncated mode
+ data (61f903c5314)
+
+ctl.c ctl_isc_mode_sync(): when receiving a truncated HA mode sync
+message, comment out ctl_ha_msg_abort(CTL_HA_CHAN_CTL) instead of
+aborting the HA connection. Periodic reconnect storms from truncated
+mode pages caused worse races than the unsynced mode page. Single-line
+change; conflict-free rebase (15.1 ctl.c upstream-drifted +1548 lines
+but this site merged automatically).
+---
+ sys/cam/ctl/ctl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sys/cam/ctl/ctl.c b/sys/cam/ctl/ctl.c
+index 442ef1d30542..4741434444fc 100644
+--- a/sys/cam/ctl/ctl.c
++++ b/sys/cam/ctl/ctl.c
+@@ -1414,7 +1414,7 @@ ctl_isc_mode_sync(struct ctl_softc *softc, union ctl_ha_msg *msg, int len)
+ 	if (len < offsetof(struct ctl_ha_msg_mode, data[i])) {
+ 		printf("%s: Received truncated message data %d < %zu\n",
+ 		    __func__, len, offsetof(struct ctl_ha_msg_mode, data[i]));
+-		ctl_ha_msg_abort(CTL_HA_CHAN_CTL);
++//		ctl_ha_msg_abort(CTL_HA_CHAN_CTL);
+ 		return;
+ 	}
+ 
+-- 
+2.55.0.windows.3
+

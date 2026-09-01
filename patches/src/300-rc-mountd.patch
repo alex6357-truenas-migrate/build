@@ -1,0 +1,266 @@
+From 2e1495abb4112b874e7e04dc2a834c5ea7ce8117 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 20:42:47 +0800
+Subject: [PATCH] rc-mountd: integrate TrueNAS rc framework + NFS export
+ robustness on 15.1
+
+Integration of TrueNAS rc/mountd patches rebased onto FreeBSD 15.1:
+- 05fb1b1a812 Import rc.dynamicdiskless (new file, from TrueOS 12-stable)
+- 520e9fdb52d Re-enable rc.dynamicdiskless via /etc/dynamicdiskless flag
+- a93e963fd08 Comment out force_depends in mountd/nfsd rc scripts
+  (avoid confusing FreeNAS/TrueNAS middleware orchestration)
+- b6aaab1b019 Remove excessive devd dependencies (REQUIRE: netif ldconfig)
+  (break ix-syncdisks circular dependency)
+- c7df8b01582 Bump default TMPFS size to physmem/1536 (~1/3 RAM)
+- bcb2a2df228 Allow zvol name to have space/double quotation mark
+  (NOTE: kern_conf prep_devname change is applied in kernel-misc group)
+
+NOTE: rc.subr/rc.subr.8 NOT touched here -- the only os change to those
+is abf14b58ac7 (revert MFC r351863), handled separately in the optional
+group as a conflict-point decision (15.1 upstream retains that MFC).
+
+Rebase notes vs 15.1: all rc scripts merged cleanly (0 conflicts); only
+rc.subr would conflict and is intentionally left at 15.1 baseline.
+---
+ libexec/rc/Makefile           |   2 +-
+ libexec/rc/rc                 |   5 ++
+ libexec/rc/rc.d/devd          |   1 -
+ libexec/rc/rc.d/mountd        |   3 +-
+ libexec/rc/rc.d/nfsd          |   9 +--
+ libexec/rc/rc.dynamicdiskless | 126 ++++++++++++++++++++++++++++++++++
+ libexec/rc/rc.initdiskless    |   3 +-
+ 7 files changed, 141 insertions(+), 8 deletions(-)
+ create mode 100644 libexec/rc/rc.dynamicdiskless
+
+diff --git a/libexec/rc/Makefile b/libexec/rc/Makefile
+index e82b582462d0..d8fe8f8932aa 100644
+--- a/libexec/rc/Makefile
++++ b/libexec/rc/Makefile
+@@ -2,7 +2,7 @@
+ 
+ CONFGROUPS=	CONFETC CONFETCEXEC CONFETCDEFAULTS
+ CONFETCDIR=	/etc
+-CONFETC=	network.subr rc rc.initdiskless rc.subr rc.shutdown rc.bsdextended
++CONFETC=	network.subr rc rc.dynamicdiskless rc.initdiskless rc.subr rc.shutdown rc.bsdextended
+ CONFETCPACKAGE=	rc
+ 
+ .if ${MK_IPFW} != "no"
+diff --git a/libexec/rc/rc b/libexec/rc/rc
+index db3c3e20ab44..fe3cb3153ffd 100644
+--- a/libexec/rc/rc
++++ b/libexec/rc/rc
+@@ -46,6 +46,11 @@ HOME=/
+ PATH=/sbin:/bin:/usr/sbin:/usr/bin
+ export HOME PATH
+ 
++# Do we want to do a dynamic diskless setup?
++if [ -f /etc/dynamicdiskless ]; then
++	sh /etc/rc.dynamicdiskless
++fi
++
+ if [ "$1" = autoboot ]; then
+ 	autoboot=yes
+ 	_boot="faststart"
+diff --git a/libexec/rc/rc.d/devd b/libexec/rc/rc.d/devd
+index 98f2068c2075..692cb980c27e 100755
+--- a/libexec/rc/rc.d/devd
++++ b/libexec/rc/rc.d/devd
+@@ -3,7 +3,6 @@
+ #
+ 
+ # PROVIDE: devd
+-# REQUIRE: netif ldconfig
+ # BEFORE: NETWORKING mountcritremote
+ # KEYWORD: nojail shutdown
+ 
+diff --git a/libexec/rc/rc.d/mountd b/libexec/rc/rc.d/mountd
+index dfd2431f9c35..b3ca5acd60e5 100755
+--- a/libexec/rc/rc.d/mountd
++++ b/libexec/rc/rc.d/mountd
+@@ -34,7 +34,8 @@ mountd_precmd()
+ 		sysctl vfs.nfsd.server_max_nfsvers=4 > /dev/null
+ 		rc_flags="${rc_flags} -R"
+ 	else
+-		force_depend rpcbind || return 1
++		# Commented-out because confuses FreeNAS middleware
++		#force_depend rpcbind || return 1
+ 		if checkyesno nfsv4_server_enable; then
+ 			sysctl vfs.nfsd.server_max_nfsvers=4 > /dev/null
+ 		else
+diff --git a/libexec/rc/rc.d/nfsd b/libexec/rc/rc.d/nfsd
+index 364c2a3b6bd3..bd760e9a5d2f 100755
+--- a/libexec/rc/rc.d/nfsd
++++ b/libexec/rc/rc.d/nfsd
+@@ -55,11 +55,12 @@ nfsd_precmd()
+ 		sysctl vfs.nfsd.server_max_nfsvers=3 > /dev/null
+ 	fi
+ 
+-	if ! checkyesno nfsv4_server_only; then
+-		force_depend rpcbind || return 1
+-	fi
++	# Commented-out because confuses FreeNAS middleware
++	#if ! checkyesno nfsv4_server_only; then
++	#	force_depend rpcbind || return 1
++	#fi
+ 
+-	force_depend mountd || return 1
++	#force_depend mountd || return 1
+ 	if [ -n "${nfs_server_vhost}" ]; then
+ 		command_args="-V \"${nfs_server_vhost}\""
+ 	fi
+diff --git a/libexec/rc/rc.dynamicdiskless b/libexec/rc/rc.dynamicdiskless
+new file mode 100644
+index 000000000000..c2de85a5f43d
+--- /dev/null
++++ b/libexec/rc/rc.dynamicdiskless
+@@ -0,0 +1,126 @@
++#!/bin/sh
++#
++# Copyright (c) 2018  Kris Moore
++# All rights reserved.
++#
++# Redistribution and use in source and binary forms, with or without
++# modification, are permitted provided that the following conditions
++# are met:
++# 1. Redistributions of source code must retain the above copyright
++#    notice, this list of conditions and the following disclaimer.
++# 2. Redistributions in binary form must reproduce the above copyright
++#    notice, this list of conditions and the following disclaimer in the
++#    documentation and/or other materials provided with the distribution.
++#
++# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
++# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++# ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
++# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++# SUCH DAMAGE.
++#
++# $FreeBSD$
++
++# This script is similar in concept to rc.initdiskless (Read that file!)
++#
++# It specifically probes the directories /conf/base/SUBDIR looking
++# for directories the user wishes to copy into tmpfs backed file-systems
++# and re-mounted on top of the base.
++#
++# Some key differences:
++#
++# /conf/base/SUBDIR directories do not have # to be pre-populated. Just
++# having a blank directory there indicates the # desire to convert that
++# directory to a tmpfs backed FS. Contents from the original location
++# will be copied over on boot, and then moved back into the tmpfs location
++# of the existing directory.
++#
++# /conf/base/DIR__DIR__SUBDIR is allowed. An example would be wanting to
++# use /conf/base/usr__local__etc which would make /usr/local/etc
++# a tmpfs backed FS.
++
++DEFAULT_TMPFS_SIZE=$(($(/sbin/sysctl -n hw.physmem) / 1536))
++
++copy_subdir()
++{
++	CDIR=$(basename $1)
++	TDIR=$(basename $1 | sed 's|__|/|g')
++	if [ ! -d "/$TDIR" ] ; then
++		echo "ERROR: /conf/base/$CDIR was specified but /$TDIR does not exist"
++		return 1
++	fi
++
++	# Check if we have a md_size specificed for this FS
++	unset MDSIZE
++	if [ -e "/conf/base/$CDIR/md_size" ] ; then
++		MDSIZE=$(cat /conf/base/$CDIR/md_size)
++	fi
++
++	create_md /conf/base/$CDIR $CDIR $MDSIZE
++	if [ $? -ne 0 ] ; then
++		echo "ERROR: Failed mounting tmpfs on /conf/base/$CDIR"
++		return 1
++	fi
++
++	cp -a /${TDIR}/ /conf/base/${CDIR}/
++	if [ $? -ne 0 ] ; then
++		echo "ERROR: Failed copying $TDIR -> /conf/base/$CDIR"
++		return 1
++	fi
++
++	create_md /$TDIR ${CDIR}_real $MDSIZE
++	if [ $? -ne 0 ] ; then
++		echo "ERROR: Failed mounting tmpfs on /$TDIR"
++		return 1
++	fi
++
++	cp -a /conf/base/${CDIR}/ /${TDIR}/
++	if [ $? -ne 0 ] ; then
++		echo "ERROR: Failed copying /conf/base/$CDIR -> /$TDIR"
++		return 1
++	fi
++}
++
++# Create a generic memory disk.
++# The 'auto' parameter will attempt to use tmpfs(5), falls back to md(4).
++# $1 is size in 512-byte sectors, $2 is the mount point.
++mount_md() {
++    /sbin/mdmfs -s $1 auto $2
++}
++
++# Create the memory filesystem if it has not already been created
++#
++create_md() {
++	[ "x`eval echo \\$md_created_$2`" = "x" ] || return # only once
++	if [ -z "$3" ]; then
++	    md_size=${DEFAULT_TMPFS_SIZE}
++	else
++	    md_size="$3"
++	fi
++	md_size=$((${md_size} * 512))
++	mount_md $md_size /$1
++	/bin/chmod 755 /$1
++	eval md_created_$2=created
++}
++
++# Do we have anything to do?
++if [ ! -d "/conf/base/" ] ; then
++	return 0
++fi
++
++# Make sure tmpfs is loaded
++kldload tmpfs 2>/dev/null
++
++# Lets grab a list of dirs to work on
++for SUBDIR in $(find /conf/base -type d -depth 1 | tr -s '\n' ' ')
++do
++	copy_subdir ${SUBDIR}
++done
++
++# DONE
++exit 0
+diff --git a/libexec/rc/rc.initdiskless b/libexec/rc/rc.initdiskless
+index 3b66a3c4928a..1c0634826480 100644
+--- a/libexec/rc/rc.initdiskless
++++ b/libexec/rc/rc.initdiskless
+@@ -154,6 +154,7 @@
+ # (end of documentation, now get to the real code)
+ 
+ dlv=`/sbin/sysctl -n vfs.nfs.diskless_valid 2> /dev/null`
++DEFAULT_TMPFS_SIZE=$(($(/sbin/sysctl -n hw.physmem) / 1536))
+ 
+ # DEBUGGING
+ # log something on stdout if verbose.
+@@ -222,7 +223,7 @@ mount_md() {
+ create_md() {
+ 	[ "x`eval echo \\$md_created_$1`" = "x" ] || return # only once
+ 	if [ "x`eval echo \\$md_size_$1`" = "x" ]; then
+-	    md_size=10240
++	    md_size=${DEFAULT_TMPFS_SIZE}
+ 	else
+ 	    md_size=`eval echo \\$md_size_$1`
+ 	fi
+-- 
+2.55.0.windows.3
+

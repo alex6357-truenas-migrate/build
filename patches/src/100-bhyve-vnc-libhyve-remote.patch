@@ -1,0 +1,743 @@
+From 2a10ac15f95f64aa2e71e14dacd855d7c07e8103 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 15:36:32 +0800
+Subject: [PATCH] bhyve-vnc: integrate libhyve-remote/VNC server support + RFB
+ escape hatch
+
+Integration of TrueNAS bhyve VNC patches rebased onto FreeBSD 15.1:
+- a60cb17a143 Add libhyve-remote and vncserver support (initial vncserver.c)
+- d87fdb68cbb Pass hostname to vnc_init_server
+- 6ff4af7a16e Remove double free (SIGBUS fix)
+- c18542fb46f Remove unnecessary unlock; vnc_init_server before thread
+- b45456226e2 vncserver stop waiting when vm destroyed (fstat escape hatch)
+- a343da24e50 Add wait escape hatch for RFB as well (waitfd, RFB_WAIT_INTERVAL)
+- cc792d3faec Reduce RFB wait interval to 1 second
+- 9a67aff59b3 Port gcc/SSE4.2 detection fix to vncserver.c
+- 2057cfd7cb0 Remove duplicate variable definition (build fix)
+
+Rebase notes vs 15.1:
+- 15.1 rfb_init gained sa_family_t family param (IPv6/AF_UNIX); kept it
+  and changed wait -> waitfd for the escape hatch.
+- 15.1 moved vga.c/xmsr.c/spinup_ap.c to amd64/Makefile.inc; only
+  vncserver.c added to main Makefile SRCS.
+- 15.1 rfb_softc gained pixfmt/new_pixfmt/pixrow/fbname (pixel format
+  negotiation); preserved alongside os libhyve-remote ABI placeholder fields.
+- 15.1 vncserver.c absent; taken from os HEAD (446 lines, with 9a67aff
+  do_cpuid/CPUID2_SSE42 gcc fix).
+---
+ lib/libvmmapi/vmmapi.c     |   2 +-
+ usr.sbin/bhyve/Makefile    |   5 +-
+ usr.sbin/bhyve/bhyve.8     |   5 +-
+ usr.sbin/bhyve/pci_fbuf.c  |  37 ++-
+ usr.sbin/bhyve/rfb.c       |  31 ++-
+ usr.sbin/bhyve/rfb.h       |   5 +-
+ usr.sbin/bhyve/vncserver.c | 459 +++++++++++++++++++++++++++++++++++++
+ 7 files changed, 529 insertions(+), 15 deletions(-)
+ create mode 100644 usr.sbin/bhyve/vncserver.c
+
+diff --git a/lib/libvmmapi/vmmapi.c b/lib/libvmmapi/vmmapi.c
+index 77f0f8f5c581..de29f2bf2518 100644
+--- a/lib/libvmmapi/vmmapi.c
++++ b/lib/libvmmapi/vmmapi.c
+@@ -1279,7 +1279,7 @@ vm_limit_rights(struct vmctx *ctx)
+ {
+ 	cap_rights_t rights;
+ 
+-	cap_rights_init(&rights, CAP_IOCTL, CAP_MMAP_RW);
++	cap_rights_init(&rights, CAP_IOCTL, CAP_MMAP_RW, CAP_FSTATAT);
+ 	if (caph_rights_limit(ctx->fd, &rights) != 0)
+ 		return (-1);
+ 	if (caph_ioctls_limit(ctx->fd, vm_ioctl_cmds, vm_ioctl_ncmds) != 0)
+diff --git a/usr.sbin/bhyve/Makefile b/usr.sbin/bhyve/Makefile
+index 25fb71b5768f..70606a9fae77 100644
+--- a/usr.sbin/bhyve/Makefile
++++ b/usr.sbin/bhyve/Makefile
+@@ -68,8 +68,9 @@ SRCS=	\
+ 	usb_emul.c		\
+ 	usb_mouse.c		\
+ 	virtio.c		\
+-	vmexit.c		\
+-	vmgenc.c
++vmexit.c		\
++	vmgenc.c		\
++	vncserver.c
+ 
+ .if ${MK_BHYVE_SNAPSHOT} != "no"
+ SRCS+=	snapshot.c
+diff --git a/usr.sbin/bhyve/bhyve.8 b/usr.sbin/bhyve/bhyve.8
+index d0237bad19a8..3e43548bfba8 100644
+--- a/usr.sbin/bhyve/bhyve.8
++++ b/usr.sbin/bhyve/bhyve.8
+@@ -490,6 +490,9 @@ optionally, a TPM module, a fw_cfg type, and the debug/test device.
+ The LPC bridge emulation can only be configured on bus 0.
+ .It Cm fbuf
+ Raw framebuffer device attached to VNC server.
++.It Cm vncserver
++Raw framebuffer device attached to a third party library that provides
++the VNC server.
+ .It Cm xhci
+ eXtensible Host Controller Interface (xHCI) USB controller.
+ .It Cm nvme
+@@ -1230,7 +1233,7 @@ bhyve -c 2 -m 4G -w -H \\
+   -s 3,ahci-cd,/path/to/uefi-OS-install.iso \\
+   -s 4,ahci-hd,disk.img \\
+   -s 5,virtio-net,tap0 \\
+-  -s 29,fbuf,tcp=0.0.0.0:5900,w=800,h=600,wait \\
++  -s 29,fbuf,tcp=0.0.0.0:5900,w=800,h=600,wait,vncserver \\
+   -s 30,xhci,tablet \\
+   -s 31,lpc -l com1,tcp=127.0.0.1:1234 \\
+   -l bootrom,/usr/local/share/uefi-firmware/BHYVE_UEFI.fd \\
+diff --git a/usr.sbin/bhyve/pci_fbuf.c b/usr.sbin/bhyve/pci_fbuf.c
+index 560c2bc839d6..f781dc7be96b 100644
+--- a/usr.sbin/bhyve/pci_fbuf.c
++++ b/usr.sbin/bhyve/pci_fbuf.c
+@@ -1,6 +1,7 @@
+ /*-
+  * SPDX-License-Identifier: BSD-2-Clause
+  *
++ * Copyright (c) 2017 Marcelo Araujo <araujo@FreeBSD.org>.
+  * Copyright (c) 2015 Nahanni Systems, Inc.
+  * All rights reserved.
+  *
+@@ -39,8 +40,11 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <sysexits.h>
+ 
++#include <dlfcn.h>
+ #include <errno.h>
++#include <err.h>
+ #include <unistd.h>
+ 
+ #include "bhyvegc.h"
+@@ -104,6 +108,9 @@ struct pci_fbuf_softc {
+ 	int       vga_enabled;
+ 	int	  vga_full;
+ 
++	int       vncserver_enabled;
++	int       vncserver_web;
++
+ 	uint32_t  fbaddr;
+ 	char      *fb_base;
+ 	uint16_t  gc_width;
+@@ -248,9 +255,23 @@ pci_fbuf_parse_config(struct pci_fbuf_softc *sc, nvlist_t *nvl)
+ 	char *cp;
+ 
+ 	sc->rfb_wait = get_config_bool_node_default(nvl, "wait", false);
++	sc->vncserver_web = get_config_bool_node_default(nvl, "vncweb", false);
++
++	/* Prefer "vncserver" to "rfb" and "tcp". */
++	value = get_config_value_node(nvl, "vncserver");
++	if (value != NULL) {
++		void	*shlib;
+ 
+-	/* Prefer "rfb" to "tcp". */
+-	value = get_config_value_node(nvl, "rfb");
++		shlib = dlopen("/usr/local/lib/libhyverem.so", RTLD_LAZY);
++		if (!shlib) {
++			sc->vncserver_enabled = 0;
++			fprintf(stderr, "Using RFB bhyve implementation.\n");
++		} else {
++			sc->vncserver_enabled = 1;
++		}
++		dlclose(shlib);
++	} else
++		value = get_config_value_node(nvl, "rfb");
+ 	if (value == NULL)
+ 		value = get_config_value_node(nvl, "tcp");
+ 	if (value != NULL) {
+@@ -384,7 +405,7 @@ pci_fbuf_render(struct bhyvegc *gc, void *arg)
+ static int
+ pci_fbuf_init(struct pci_devinst *pi, nvlist_t *nvl)
+ {
+-	int error;
++	int error, waitfd;
+ 	struct pci_fbuf_softc *sc;
+ 
+ 	if (fbuf_sc != NULL) {
+@@ -452,8 +473,14 @@ pci_fbuf_init(struct pci_devinst *pi, nvlist_t *nvl)
+ 
+ 	memset((void *)sc->fb_base, 0, FB_SIZE);
+ 
+-	error = rfb_init(sc->rfb_family, sc->rfb_host, sc->rfb_port,
+-	    sc->rfb_wait, sc->rfb_password);
++waitfd = sc->rfb_wait ? vm_get_device_fd(pi->pi_vmctx) : -1;
++
++	if (sc->vncserver_enabled)
++		error = vncserver_init(sc->rfb_host, sc->rfb_port,
++		    waitfd, sc->rfb_password, sc->vncserver_web);
++	else
++		error = rfb_init(sc->rfb_family, sc->rfb_host, sc->rfb_port, waitfd,
++		    sc->rfb_password);
+ done:
+ 	if (error)
+ 		free(sc);
+diff --git a/usr.sbin/bhyve/rfb.c b/usr.sbin/bhyve/rfb.c
+index c6c048d2b140..eabb235c179e 100644
+--- a/usr.sbin/bhyve/rfb.c
++++ b/usr.sbin/bhyve/rfb.c
+@@ -34,6 +34,7 @@
+ #include <sys/endian.h>
+ #include <sys/socket.h>
+ #include <sys/select.h>
++#include <sys/stat.h>
+ #include <sys/time.h>
+ #include <sys/un.h>
+ #include <arpa/inet.h>
+@@ -150,12 +151,20 @@ struct rfb_softc {
+ 	uint32_t	*crc;		/* WxH crc cells */
+ 	uint32_t	*crc_tmp;	/* buffer to store single crc row */
+ 	int		crc_width, crc_height;
+-
+-	struct pixfmt	pixfmt;		/* owned by the write thread */
++struct pixfmt	pixfmt;		/* owned by the write thread */
+ 	struct pixfmt	new_pixfmt;	/* managed with pixfmt_mtx */
+ 	uint32_t	*pixrow;
+ 	char		*fbname;
+ 	int		fbnamelen;
++
++	char		*desktopName;
++	bool		alwaysShared;
++	int		redShift, greenShift, blueShift;
++	char		*frameBuffer;
++	int		bitsPerSample, samplesPerPixel, bytesPerPixel;
++	int		bind_port;
++	void		(*kdb_handler)(int down, uint32_t keysym);
++	void		(*ptr_handler)(uint8_t button, int x, int y);
+ };
+ 
+ struct rfb_pixfmt {
+@@ -1338,7 +1347,7 @@ sse42_supported(void)
+ }
+ 
+ int
+-rfb_init(sa_family_t family, const char *hostname, int port, int wait,
++rfb_init(sa_family_t family, const char *hostname, int port, int waitfd,
+     const char *password)
+ {
+ 	int e;
+@@ -1346,7 +1355,10 @@ rfb_init(sa_family_t family, const char *hostname, int port, int wait,
+ 	struct rfb_softc *rc;
+ 	struct addrinfo *ai = NULL;
+ 	struct addrinfo hints;
+-	struct sockaddr_un sun;
++struct sockaddr_un sun;
++	struct timeval now;
++	struct timespec until;
++	int wait;
+ 	int on = 1;
+ 	int cnt;
+ #ifndef WITHOUT_CAPSICUM
+@@ -1440,7 +1452,7 @@ rfb_init(sa_family_t family, const char *hostname, int port, int wait,
+ 
+ 	rc->hw_crc = sse42_supported();
+ 
+-	rc->conn_wait = wait;
++	rc->conn_wait = wait = waitfd != -1;
+ 	if (wait) {
+ 		pthread_mutex_init(&rc->mtx, NULL);
+ 		pthread_cond_init(&rc->cond, NULL);
+@@ -1451,8 +1463,17 @@ rfb_init(sa_family_t family, const char *hostname, int port, int wait,
+ 	pthread_set_name_np(rc->tid, "rfb");
+ 
+ 	if (wait) {
++		until.tv_nsec = 0;
+ 		DPRINTF(("Waiting for rfb client..."));
+ 		pthread_mutex_lock(&rc->mtx);
++		do {
++			/* Periodically check if the VM is still there. */
++			gettimeofday(&now, NULL);
++			until.tv_sec = now.tv_sec + RFB_WAIT_INTERVAL;
++			if (fstat(waitfd, NULL) == -1 && errno != EFAULT)
++				errx(EX_UNAVAILABLE, "the VM was destroyed");
++		} while (pthread_cond_timedwait(&rc->cond, &rc->mtx, &until));
++
+ 		pthread_cond_wait(&rc->cond, &rc->mtx);
+ 		pthread_mutex_unlock(&rc->mtx);
+ 		DPRINTF(("rfb client connected"));
+diff --git a/usr.sbin/bhyve/rfb.h b/usr.sbin/bhyve/rfb.h
+index c11d40f031af..1f2f8cb6b24a 100644
+--- a/usr.sbin/bhyve/rfb.h
++++ b/usr.sbin/bhyve/rfb.h
+@@ -32,8 +32,11 @@
+ #include <sys/socket.h>
+ 
+ #define	RFB_PORT	5900
++#define	RFB_WAIT_INTERVAL	1	/* seconds */
+ 
+-int	rfb_init(sa_family_t family, const char *hostname, int port, int wait,
++int	rfb_init(sa_family_t family, const char *hostname, int port, int waitfd,
+ 	    const char *password);
++int	vncserver_init(char *hostname, int port, int waitfd,
++	    char *password, int webserver);
+ 
+ #endif /* _RFB_H_ */
+diff --git a/usr.sbin/bhyve/vncserver.c b/usr.sbin/bhyve/vncserver.c
+new file mode 100644
+index 000000000000..41f0d6e14a82
+--- /dev/null
++++ b/usr.sbin/bhyve/vncserver.c
+@@ -0,0 +1,459 @@
++/*-
++ * Copyright (c) 2017 Marcelo Araujo <araujo@FreeBSD.org>
++ * Copyright (c) 2016 Jakub Klama <jakub@ixsystems.com>
++ * Copyright (c) 2015 Tycho Nightingale <tycho.nightingale@pluribusnetworks.com>
++ * Copyright (c) 2015 Leon Dang
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND
++ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
++ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGE.
++ */
++
++#include <sys/param.h>
++#include <sys/types.h>
++#include <sys/socket.h>
++#include <sys/time.h>
++#include <sys/event.h>
++#include <sys/stat.h>
++#include <sys/un.h>
++#include <netinet/in.h>
++
++#include <assert.h>
++#include <dlfcn.h>
++#include <err.h>
++#include <errno.h>
++#include <pthread.h>
++#include <pthread_np.h>
++#include <signal.h>
++#include <stdbool.h>
++#include <stdlib.h>
++#include <stdio.h>
++#include <string.h>
++#include <sysexits.h>
++#include <unistd.h>
++#include <machine/cpufunc.h>
++#include <machine/specialreg.h>
++
++#include <zlib.h>
++
++#include "bhyvegc.h"
++#include "console.h"
++#include "rfb.h"
++
++static int vncserver_debug = 1;
++#define	DPRINTF(params) if (vncserver_debug) printf params
++#define	WPRINTF(params) printf params
++
++struct vncserver_softc {
++	struct bhyvegc_image	*vs_gc;
++	pthread_t		vs_tid;
++	int			vs_width;
++	int			vs_height;
++	int			vs_conn_wait;
++	int			vs_sending;
++	pthread_mutex_t		vs_mtx;
++	pthread_cond_t		vs_cond;
++
++	int			vs_hw_crc;
++	uint32_t *		vs_crc;	/* WxH crc cells */
++	uint32_t *		vs_crc_tmp; /* buffer to store single crc row */
++	int			vs_crc_width;
++	int			vs_crc_height;
++
++	const char		*desktopName;
++	bool			alwaysShared;
++        bool                    vncweb;
++	int			redShift;
++	int			greenShift;
++	int			blueShift;
++	char			*frameBuffer;
++	int			bitsPerSample;
++	int			samplesPerPixel;
++	int			bytesPerPixel;
++	int			bind_port;
++	void (*kdb_handler)(int down, uint32_t keysym);
++	void (*ptr_handler)(uint8_t button, int x, int y);
++};
++
++#define RFB_MAX_WIDTH			2000
++#define RFB_MAX_HEIGHT			1200
++#define	RFB_ZLIB_BUFSZ			RFB_MAX_WIDTH*RFB_MAX_HEIGHT*4
++
++#define PIX_PER_CELL	32
++#define	PIXCELL_SHIFT	5
++#define PIXCELL_MASK	0x1F
++
++/* percentage changes to screen before sending the entire screen */
++#define RFB_SEND_ALL_THRESH		25
++
++/* path of libhyve-remote */
++#define LIB_HYVE_REMOTE "/usr/local/lib/libhyverem.so"
++
++/* prototype functions from shared library libhyve-remote */
++static int (*vnc_init_server)(struct vncserver_softc *sc, char *hostname);
++static int (*vnc_event_loop)(int time, bool b);
++static int (*vnc_enable_http)(char *webdir, bool enable);
++static int (*vnc_enable_password)(char *vnc_password);
++static void (*vnc_mark_rect_modified)(struct vncserver_softc *sc, int x1, int y1,
++	int x2, int y2);
++
++/* Try to load libhyve-remote */
++static int
++load_shared_lib(void)
++{
++    char *loader = NULL;
++    void *shlib;
++
++    if (loader == NULL) {
++	loader = strdup(LIB_HYVE_REMOTE);
++	if (loader == NULL)
++	    err(ENOMEM, "malloc error");
++    }
++
++    shlib = dlopen(loader, RTLD_GLOBAL);
++    if (!shlib) {
++	dlclose(shlib);
++	free(loader);
++	return (1);
++    } else {
++	vnc_init_server = dlsym(shlib, "vnc_init_server");
++	vnc_event_loop = dlsym(shlib, "vnc_event_loop");
++	vnc_enable_http = dlsym(shlib, "vnc_enable_http");
++	vnc_mark_rect_modified = dlsym(shlib, "vnc_mark_rect_modified");
++	vnc_enable_password = dlsym(shlib, "vnc_enable_password");
++    }
++    return (0);
++}
++
++/*
++ * Calculate CRC32 using SSE4.2; Intel or AMD Bulldozer+ CPUs only
++ */
++static __inline uint32_t
++fast_crc32(void *buf, int len, uint32_t crcval)
++{
++	uint32_t q = len / sizeof(uint32_t);
++	uint32_t *p = (uint32_t *)buf;
++
++	while (q--) {
++		asm volatile (
++			".byte 0xf2, 0xf, 0x38, 0xf1, 0xf1;"
++			:"=S" (crcval)
++			:"0" (crcval), "c" (*p)
++		);
++		p++;
++	}
++
++	return (crcval);
++}
++
++static int
++vncserver_send_screen(struct vncserver_softc *sc, int all)
++{
++	struct bhyvegc_image *gc_image;
++	int x, y;
++	int celly, cellwidth;
++	int xcells, ycells;
++	int w, h;
++	uint32_t *p;
++	int rem_x, rem_y;   /* remainder for resolutions not x32 pixels ratio */
++	int retval;
++	uint32_t *crc_p, *orig_crc;
++	int changes;
++
++	console_refresh();
++
++	pthread_mutex_lock(&sc->vs_mtx);
++	if (sc->vs_sending) {
++		pthread_mutex_unlock(&sc->vs_mtx);
++		return (1);
++	}
++	sc->vs_sending = 1;
++	pthread_mutex_unlock(&sc->vs_mtx);
++
++	retval = 0;
++
++	if (all) {
++		vnc_mark_rect_modified(sc, 0, 0, sc->vs_width, sc->vs_height);
++		goto done;
++	}
++
++	/*
++	 * Calculate the checksum for each 32x32 cell. Send each that
++	 * has changed since the last scan.
++	 */
++
++	/* Resolution changed */
++
++	gc_image = sc->vs_gc;
++	sc->vs_crc_width = gc_image->width;
++	sc->vs_crc_height = gc_image->height;
++
++	w = sc->vs_crc_width;
++	h = sc->vs_crc_height;
++	xcells = howmany(sc->vs_crc_width, PIX_PER_CELL);
++	ycells = howmany(sc->vs_crc_height, PIX_PER_CELL);
++
++	rem_x = w & PIXCELL_MASK;
++
++	rem_y = h & PIXCELL_MASK;
++	if (!rem_y)
++		rem_y = PIX_PER_CELL;
++
++	p = gc_image->data;
++
++	/*
++	 * Go through all cells and calculate crc. If significant number
++	 * of changes, then send entire screen.
++	 * crc_tmp is dual purpose: to store the new crc and to flag as
++	 * a cell that has changed.
++	 */
++	crc_p = sc->vs_crc_tmp - xcells;
++	orig_crc = sc->vs_crc - xcells;
++	changes = 0;
++	memset(sc->vs_crc_tmp, 0, sizeof(uint32_t) * xcells * ycells);
++	for (y = 0; y < h; y++) {
++		if ((y & PIXCELL_MASK) == 0) {
++			crc_p += xcells;
++			orig_crc += xcells;
++		}
++
++		for (x = 0; x < xcells; x++) {
++			if (sc->vs_hw_crc)
++				crc_p[x] = fast_crc32(p,
++					     PIX_PER_CELL * sizeof(uint32_t),
++					     crc_p[x]);
++			else
++				crc_p[x] = (uint32_t)crc32(crc_p[x],
++					     (Bytef *)p,
++					     PIX_PER_CELL * sizeof(uint32_t));
++
++			p += PIX_PER_CELL;
++
++			/* check for crc delta if last row in cell */
++			if ((y & PIXCELL_MASK) == PIXCELL_MASK || y == (h-1)) {
++				if (orig_crc[x] != crc_p[x]) {
++					orig_crc[x] = crc_p[x];
++					crc_p[x] = 1;
++					changes++;
++				} else {
++					crc_p[x] = 0;
++				}
++			}
++		}
++
++		if (rem_x) {
++			if (sc->vs_hw_crc)
++				crc_p[x] = fast_crc32(p,
++						    rem_x * sizeof(uint32_t),
++						    crc_p[x]);
++			else
++				crc_p[x] = (uint32_t)crc32(crc_p[x],
++						    (Bytef *)p,
++						    rem_x * sizeof(uint32_t));
++			p += rem_x;
++
++			if ((y & PIXCELL_MASK) == PIXCELL_MASK || y == (h-1)) {
++				if (orig_crc[x] != crc_p[x]) {
++					orig_crc[x] = crc_p[x];
++					crc_p[x] = 1;
++					changes++;
++				} else {
++					crc_p[x] = 0;
++				}
++			}
++		}
++	}
++
++	/* If number of changes is > THRESH percent, send the whole screen */
++	if (((changes * 100) / (xcells * ycells)) >= RFB_SEND_ALL_THRESH) {
++		vnc_mark_rect_modified(sc, 0, 0, sc->vs_width, sc->vs_height);
++		goto done;
++	}
++	
++	/* Go through all cells, and send only changed ones */
++	crc_p = sc->vs_crc_tmp;
++	for (y = 0; y < h; y += PIX_PER_CELL) {
++		/* previous cell's row */
++		celly = (y >> PIXCELL_SHIFT);
++
++		/* Delta check crc to previous set */
++		for (x = 0; x < xcells; x++) {
++			if (*crc_p++ == 0)
++				continue;
++
++			if (x == (xcells - 1) && rem_x > 0)
++				cellwidth = rem_x;
++			else
++				cellwidth = PIX_PER_CELL;
++
++			vnc_mark_rect_modified(sc, x * PIX_PER_CELL,
++				celly * PIX_PER_CELL,
++				x * PIX_PER_CELL + cellwidth,
++				(celly * PIX_PER_CELL) + (y + PIX_PER_CELL >= h ? rem_y : PIX_PER_CELL));
++		}
++	}
++	
++	retval = 1;
++
++done:
++	pthread_mutex_lock(&sc->vs_mtx);
++	sc->vs_sending = 0;
++	pthread_mutex_unlock(&sc->vs_mtx);
++	
++	return (retval);
++}
++
++static void
++handle_keyboard(int down, uint32_t keysym) {
++    console_key_event(down, keysym, 0);
++}
++
++static void
++handle_ptr(uint8_t button, int x, int y) {
++    console_ptr_event(button, x, y);
++}
++
++static void *
++vncserver_thr(void *arg)
++{
++	struct vncserver_softc *sc;
++	struct kevent kev, ret;
++	int kq, err;
++
++	sc = arg;
++	kq = kqueue();
++
++	EV_SET(&kev, 1, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, 40, NULL);
++
++	err = kevent(kq, &kev, 1, NULL, 0, NULL);
++	if (err < 0)
++		goto out;
++
++	for (;;) {
++		err  = kevent(kq, NULL, 0, &ret, 1, NULL);
++		if (err < 0)
++			goto out;
++
++		if (ret.filter == EVFILT_TIMER) {
++			if (vncserver_send_screen(sc, 0) < 0)
++				goto out;
++		}
++	}
++
++out:
++	close(kq);
++	return (NULL);
++}
++
++static int
++sse42_supported(void)
++{
++	u_int cpu_registers[4], ecx;
++
++	do_cpuid(1, cpu_registers);
++
++	ecx = cpu_registers[2];
++
++	return ((ecx & CPUID2_SSE42) != 0);
++}
++
++int
++vncserver_init(char *hostname, int port, int waitfd, char *password,
++    int webserver __unused)
++{
++	struct vncserver_softc *sc;
++	struct timeval now;
++	struct timespec until;
++	int wait;
++
++	if (load_shared_lib() == 1)
++	    errx(EX_SOFTWARE, "cannot load shared library libhyve-remote");
++	
++	sc = calloc(1, sizeof(struct vncserver_softc));
++
++	sc->vs_crc = calloc(howmany(RFB_MAX_WIDTH * RFB_MAX_HEIGHT, 32),
++			 sizeof(uint32_t));
++	sc->vs_crc_tmp = calloc(howmany(RFB_MAX_WIDTH * RFB_MAX_HEIGHT, 32),
++			 sizeof(uint32_t));
++	sc->vs_crc_width = RFB_MAX_WIDTH;
++	sc->vs_crc_height = RFB_MAX_HEIGHT;
++
++	sc->vs_hw_crc = sse42_supported();
++
++	sc->vs_conn_wait = wait = waitfd != -1;
++
++	if (wait) {
++		pthread_mutex_init(&sc->vs_mtx, NULL);
++		pthread_cond_init(&sc->vs_cond, NULL);
++	}
++
++	sc->vs_gc = console_get_image();
++	sc->vs_height = sc->vs_gc->height;
++	sc->vs_width = sc->vs_gc->width;
++
++	sc->desktopName = "bhyve";
++	if (password) {
++	    vnc_enable_password(password);
++	}
++	sc->alwaysShared = true;
++	sc->redShift = 16;
++	sc->greenShift = 8;
++	sc->blueShift = 0;
++	sc->bind_port = port ? port : 5900;
++	sc->frameBuffer = (char *)sc->vs_gc->data;
++
++	sc->kdb_handler = handle_keyboard;
++	sc->ptr_handler = handle_ptr;
++
++        sc->vncweb = 1;
++
++        /*
++        if (webserver)
++        {
++            DPRINTF(("===> HTTP ENABLED\n"));
++            vnc_enable_http("/z/github/libvncserver/webclients", true);
++        }
++        */
++
++	vnc_init_server(sc, hostname);
++
++	pthread_create(&sc->vs_tid, NULL, vncserver_thr, sc);
++	pthread_set_name_np(sc->vs_tid, "vncserver");
++
++	vnc_event_loop(-1, true);
++
++	if (wait) {
++		until.tv_nsec = 0;
++		DPRINTF(("Waiting for vnc client...\n"));
++		pthread_mutex_lock(&sc->vs_mtx);
++		do {
++			/* Periodically check if the VM is still there. */
++			gettimeofday(&now, NULL);
++			until.tv_sec = now.tv_sec + RFB_WAIT_INTERVAL;
++			if (fstat(waitfd, NULL) == -1 && errno != EFAULT)
++				errx(EX_UNAVAILABLE, "the VM was destroyed");
++		} while (pthread_cond_timedwait(&sc->vs_cond, &sc->vs_mtx,
++		    &until));
++		pthread_mutex_unlock(&sc->vs_mtx);
++	}
++
++	return (0);
++}
+-- 
+2.55.0.windows.3
+

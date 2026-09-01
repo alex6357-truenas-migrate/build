@@ -1,0 +1,36 @@
+From c2b3e1ad282fb86307021481ccc3eac641e035d7 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 20:48:53 +0800
+Subject: [PATCH] kernel-misc: allow zvol name to have space or double
+ quotation mark (bcb2a2df228)
+
+kern_conf.c prep_devname(): remove rejection of device names containing
+spaces or double quotes (was 'if (isspace(*from) || *from == "\"")
+return EINVAL'). zvol names registered as cdevs can then contain
+spaces/quotes, matching TrueNAS GUI naming. 15.1 still has the check;
+this removes it (builds clean, no conflicts).
+---
+ sys/kern/kern_conf.c | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/sys/kern/kern_conf.c b/sys/kern/kern_conf.c
+index 2da51d84ff60..b3e06541499c 100644
+--- a/sys/kern/kern_conf.c
++++ b/sys/kern/kern_conf.c
+@@ -721,13 +721,6 @@ prep_devname(struct cdev *dev, const char *fmt, va_list ap)
+ 		;
+ 
+ 	for (to = dev->si_name; *from != '\0'; from++, to++) {
+-		/*
+-		 * Spaces and double quotation marks cause
+-		 * problems for the devctl(4) protocol.
+-		 * Reject names containing those characters.
+-		 */
+-		if (isspace(*from) || *from == '"')
+-			return (EINVAL);
+ 		/* Treat multiple sequential slashes as single. */
+ 		while (from[0] == '/' && from[1] == '/')
+ 			from++;
+-- 
+2.55.0.windows.3
+

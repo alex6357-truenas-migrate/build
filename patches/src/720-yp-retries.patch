@@ -1,0 +1,31 @@
+From 0014d3dde7fc39806e28ac27916ddb12d0a441d4 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 21:01:29 +0800
+Subject: [PATCH] optional: reduce yp MAX_RETRIES 20 -> 5 (1021f792f34)
+
+lib/libc/yp/yplib.c: MAX_RETRIES from 20 to 5 (10s sleep between
+retries). With wrong NIS config, nss queries used to block 20*10=200s;
+after 5 retries (50s) it's almost certainly domain misconfig and should
+fail fast. Libc behavioral change affecting all NIS-using programs;
+OPTIONAL -- fail-fast vs long-hang tradeoff for the misconfig case.
+Conflict-free rebase.
+---
+ lib/libc/yp/yplib.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/libc/yp/yplib.c b/lib/libc/yp/yplib.c
+index 95ed526b2e75..a85389c86df8 100644
+--- a/lib/libc/yp/yplib.c
++++ b/lib/libc/yp/yplib.c
+@@ -87,7 +87,7 @@ struct dom_binding {
+ #ifndef BINDINGDIR
+ #define BINDINGDIR "/var/yp/binding"
+ #endif
+-#define MAX_RETRIES 20
++#define MAX_RETRIES 5
+ 
+ bool_t xdr_ypresp_all_seq(XDR *xdrs, u_long *objp);
+ 
+-- 
+2.55.0.windows.3
+

@@ -1,0 +1,3655 @@
+From 8b3fa3b06926de38691b6fa4180618c01e5ed400 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 20:55:19 +0800
+Subject: [PATCH] optional: integrate iX ixnvdimm NVDIMM-N driver + tool onto
+ 15.1
+
+Integration of TrueNAS ixnvdimm patches (25 commits) rebased onto
+FreeBSD 15.1 as one group:
+- ca02fa94619 initial import from freenas/11-stable (driver core)
+- 5f7b58dc6cd NFIT control region + pnpinfo/location
+- b5d295755ce NFIT flags sysctl
+- db82359df42 ProximityDomain -> VM domain mapping
+- 3879f6a5eb3 NUMA-aware IOAT channel selection
+- b866725a3bd,7bb9340e07d,1590bc59d7f,67036bc9d6d,c4d0f444d38 IOAT DMA
+- d809dbcbb36,0a5c0b7bbdb,c4478a23b29 DMAR cooperation (added+reverted+panic fix)
+- dd54c1c2495 HA sync in taskqueue thread
+- 4f0b010add9,02cfcc3a339 _NCH/_NBS, ARM_INFO health
+- 049f1b7abc7,b6448ef5dcf4 string buffer, build polishing
+- f1edb6447ff,facf1247039 13/14 version adaptation
+- cdc92e3bc99,7797934da62,51b32003851,696d46c4b3f,0a7dd68a902 ixnvdimm tool + DSM
+
+OPTIONAL because: this is iX-proprietary dual-controller NVDIMM
+hardware support; ordinary NAS without that hardware does not need it.
+15.1 has upstream sys/dev/nvdimm/ (basic NFIT+pmem) but lacks NTB
+HA mirror / DSM firmware mgmt / IOAT NUMA; ixnvdimm is a superset kept
+as an independent newbus tree.
+
+Rebase notes vs 15.1: all driver/tool .c/.h/.S/.S are new files taken
+from os HEAD (2117+55+130 + 1161 lines), with version-compat #if guards
+(facf1247039 handles 13 vs 14 sbuf APIs). Registration files
+(files.amd64, modules/Makefile, BSD.include.dist, include/Makefile,
+usr.sbin/Makefile) merged with minimal conflicts (only files.amd64 +
+include/Makefile needed manual resolve for upstream additions like
+ncthwm). 15.1 rfb/vmmapi unaffected.
+---
+ etc/mtree/BSD.include.dist       |    2 +
+ include/Makefile                 |    2 +-
+ sys/conf/files.amd64             |    3 +
+ sys/dev/ixnvdimm/ixnvdimm.c      | 2117 ++++++++++++++++++++++++++++++
+ sys/dev/ixnvdimm/ixnvdimm.h      |   55 +
+ sys/dev/ixnvdimm/ixnvdimm_copy.S |  130 ++
+ sys/modules/Makefile             |    2 +
+ sys/modules/ixnvdimm/Makefile    |   20 +
+ usr.sbin/Makefile                |    1 +
+ usr.sbin/ixnvdimm/Makefile       |    7 +
+ usr.sbin/ixnvdimm/ixnvdimm.c     | 1161 ++++++++++++++++
+ 11 files changed, 3499 insertions(+), 1 deletion(-)
+ create mode 100644 sys/dev/ixnvdimm/ixnvdimm.c
+ create mode 100644 sys/dev/ixnvdimm/ixnvdimm.h
+ create mode 100644 sys/dev/ixnvdimm/ixnvdimm_copy.S
+ create mode 100644 sys/modules/ixnvdimm/Makefile
+ create mode 100644 usr.sbin/ixnvdimm/Makefile
+ create mode 100644 usr.sbin/ixnvdimm/ixnvdimm.c
+
+diff --git a/etc/mtree/BSD.include.dist b/etc/mtree/BSD.include.dist
+index 97f2194a3fa1..c276818ba56e 100644
+--- a/etc/mtree/BSD.include.dist
++++ b/etc/mtree/BSD.include.dist
+@@ -147,6 +147,8 @@
+         ..
+         io
+         ..
++        ixnvdimm
++        ..
+         mfi
+         ..
+         mlx5
+diff --git a/include/Makefile b/include/Makefile
+index 57b2b34f6c6e..b7e2252d28c0 100644
+--- a/include/Makefile
++++ b/include/Makefile
+@@ -51,7 +51,7 @@ LDIRS=	geom net net80211 netgraph netinet netinet6 \
+ 
+ LSUBDIRS=	dev/acpica dev/agp dev/ciss dev/filemon dev/firewire \
+ 	dev/hwpmc dev/hyperv \
+-	dev/ic dev/iicbus dev/io dev/mfi dev/mmc \
++dev/ic dev/iicbus dev/io dev/ixnvdimm dev/mfi dev/mmc \
+ 	dev/ofw dev/pbio dev/pci ${_dev_powermac_nvram} dev/ppbus dev/pwm \
+ 	dev/smbus dev/speaker dev/tcp_log dev/veriexec dev/vkbd dev/wg \
+ 	fs/devfs fs/fdescfs fs/msdosfs fs/nfs fs/nullfs \
+diff --git a/sys/conf/files.amd64 b/sys/conf/files.amd64
+index 9837086aff99..331403f19672 100644
+--- a/sys/conf/files.amd64
++++ b/sys/conf/files.amd64
+@@ -242,6 +242,9 @@ dev/ixl/i40e_adminq.c		optional	ixl pci \
+ dev/ixl/i40e_dcb.c		optional	ixl pci \
+ 	compile-with "${NORMAL_C} -I$S/dev/ixl"
+ dev/ncthwm/ncthwm.c		optional	ncthwm superio
++dev/ixnvdimm/ixnvdimm.c		optional	ixnvdimm
++dev/ixnvdimm/ixnvdimm_copy.S	optional	ixnvdimm
++dev/nctgpio/nctgpio.c		optional	nctgpio
+ dev/qlxge/qls_dbg.c		optional	qlxge pci
+ dev/qlxge/qls_dump.c		optional	qlxge pci
+ dev/qlxge/qls_hw.c		optional	qlxge pci
+diff --git a/sys/dev/ixnvdimm/ixnvdimm.c b/sys/dev/ixnvdimm/ixnvdimm.c
+new file mode 100644
+index 000000000000..8cbdc760b9f0
+--- /dev/null
++++ b/sys/dev/ixnvdimm/ixnvdimm.c
+@@ -0,0 +1,2117 @@
++/*-
++ * Copyright (c) 2016-2020 Alexander Motin <mav@FreeBSD.org>
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer,
++ *    without modification, immediately at the beginning of the file.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
++ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
++ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
++ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
++ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
++ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
++ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include <sys/cdefs.h>
++__FBSDID("$FreeBSD$");
++
++#include "opt_acpi.h"
++
++#include <sys/param.h>
++#include <sys/module.h>
++#include <sys/systm.h>
++#include <sys/kernel.h>
++#include <sys/bio.h>
++#include <sys/bus.h>
++#include <sys/conf.h>
++#include <sys/endian.h>
++#include <sys/malloc.h>
++#include <sys/linker.h>
++#include <sys/priv.h>
++#include <sys/rman.h>
++#include <sys/sbuf.h>
++#include <sys/smp.h>
++#include <sys/sysctl.h>
++#include <sys/taskqueue.h>
++#include <sys/uio.h>
++#include <sys/uuid.h>
++#include <sys/vmmeter.h>
++
++#include <vm/vm.h>      /* vtophys */
++#include <vm/pmap.h>    /* vtophys */
++#include <vm/vm_param.h>
++#include <vm/vm_object.h>
++#include <vm/vm_page.h>
++#include <vm/vm_phys.h>
++
++#include <geom/geom_disk.h>
++
++#include <machine/bus.h>
++#include <machine/metadata.h>
++#include <machine/pc/bios.h>
++#include <machine/cpu.h>
++
++#include <contrib/dev/acpica/include/acpi.h>
++#include <contrib/dev/acpica/include/accommon.h>
++
++#include <dev/acpica/acpivar.h>
++
++#include "ixnvdimm.h"
++#include "../ntb/ntb.h"
++#include "../ioat/ioat.h"
++
++#define	ELF_KERN_STR	("elf"__XSTRING(__ELF_WORD_SIZE)" kernel")
++
++#define	PMEM_NUM_TR	256
++
++#define	ACPI_ADR_NVDIMM_DIMM(adr)	(((adr) & 0x0000000f))
++#define	ACPI_ADR_NVDIMM_CHAN(adr)	(((adr) & 0x000000f0) >> 4)
++#define	ACPI_ADR_NVDIMM_CTRL(adr)	(((adr) & 0x00000f00) >> 8)
++#define	ACPI_ADR_NVDIMM_SOCK(adr)	(((adr) & 0x0000f000) >> 12)
++#define	ACPI_ADR_NVDIMM_NODE(adr)	(((adr) & 0x0fff0000) >> 16)
++#define	ACPI_ADR_NVDIMM_PU(adr)		(((adr) & 0x80000000) >> 31)
++
++struct pmem_dma_ch;
++struct pmem_disk;
++
++struct pmem_dma_tr {
++	struct pmem_dma_ch	*ch;
++	struct pmem_disk	*sc;
++	bus_dmamap_t		 dmam;
++	SLIST_ENTRY(pmem_dma_tr) list;
++	int			 inprog;
++	struct bio		*bp;
++};
++
++struct pmem_dma_ch {
++	bus_dmaengine_t		 dma1;		/* Primary DMA engine (local) */
++	bus_dmaengine_t		 dma2;		/* Secondary DMA engine (NTB) */
++	bus_dma_tag_t		 dmat;
++	struct pmem_dma_tr	*trs;
++	struct mtx		 mtx	__aligned(CACHE_LINE_SIZE);
++	SLIST_HEAD(, pmem_dma_tr) free_tr;
++};
++
++struct pmem_dma {
++	int			 numch;
++	int			 num1;
++	int			 num2;
++	int			 w2swap;
++	struct pmem_dma_ch	*ch;
++};
++
++enum {
++	STATE_INCORRECT = 0,
++	STATE_NONE,
++	STATE_IDLE,
++	STATE_WAITING,
++	STATE_READY,
++};
++
++/* PMEM label */
++struct pmem_label {
++	uint64_t	sign;	/* NTBN_SIGN_LONG signature */
++	uint64_t	array;	/* Unique array ID */
++	uint32_t	empty;	/* PMEM is empty and was never written */
++	uint32_t	dirty;	/* PMEM was written without NTB connection */
++	uint32_t	opened;	/* PMEM device is open now */
++	uint32_t	state;	/* Synchronization state */
++};
++
++/* PMEM device */
++struct pmem_disk {
++	device_t		 dev;
++	struct disk		*disk;
++	int			 rid;
++	struct resource		*res;
++	vm_paddr_t		 paddr;		/* Local PMEM phys address */
++	vm_paddr_t		 size;		/* Local PMEM size */
++	uint8_t			*vaddr;		/* Local PMEM KVA address */
++	struct pmem_label	*label;		/* Local PMEM label */
++	vm_paddr_t		 rpaddr;	/* Remote PMEM phys address */
++	uint8_t			*rvaddr;	/* Remote PMEM KVA address */
++	struct pmem_label	*rlabel;	/* Remote PMEM label */
++	int			 domain;	/* Local PMEM domain */
++	int			 rdomain;	/* Remove PMEM (NTB) domain */
++	struct pmem_dma		 dma;
++};
++
++/* NTB PMEM device */
++struct ntb_pmem {
++	device_t		 nvd_dev;	/* PMEM device. */
++	struct taskqueue	*ntb_link_tq;
++	struct timeout_task	 ntb_link_task;
++	struct callout		 ntb_start;
++	vm_paddr_t		 ntb_paddr;	/* MW physical address */
++	vm_paddr_t		 ntb_size;	/* MW size */
++	caddr_t			 ntb_caddr;	/* MW KVA address */
++	vm_paddr_t		 ntb_xalign;	/* XLAT address allignment */
++	vm_paddr_t		 ntb_xpaddr;	/* XLAT physical address */
++	vm_paddr_t		 ntb_xsize;	/* XLAT size */
++	struct root_hold_token	*ntb_rootmount; /* Root mount delay token. */
++};
++
++enum {
++	NTBN_SIGN = 0,
++	NTBN_SIZE_HIGH,
++	NTBN_OFF_HIGH,
++	NTBN_OFF_LOW,
++};
++
++#define NTBN_SIGN_SHORT	0x4e564430
++#define NTBN_SIGN_LONG	0x4e5644494d4d3030
++
++SYSCTL_NODE(_hw, OID_AUTO, pmem, CTLFLAG_RW, 0, "PMEM stuff");
++
++static u_int ntb_pmem_start_timeout = 120;
++SYSCTL_UINT(_hw_pmem, OID_AUTO, start_timeout, CTLFLAG_RWTUN,
++    &ntb_pmem_start_timeout, 0, "Time to wait for NTB connection");
++
++static u_int ntb_pmem_min_dma_size = 24*1024;
++SYSCTL_UINT(_hw_pmem, OID_AUTO, min_dma_size, CTLFLAG_RWTUN,
++    &ntb_pmem_min_dma_size, 0, "Minimal I/O size to use DMA");
++
++#ifndef MAXPHYS
++#define MAXPHYS maxphys
++#endif
++
++static void
++pmem_dma_init(device_t dev)
++{
++	struct pmem_disk *sc = device_get_softc(dev);
++	struct pmem_dma_ch *ch;
++	struct pmem_dma_tr *tr;
++	uint8_t dmapd[MAXMEMDOM];
++	bus_dmaengine_t dma;
++	size_t maxio;
++	int d, d1, d2, err, i, n, numch, num1, num2, t;
++
++	n = ioat_get_nchannels();
++	if (n == 0)
++		return;
++
++	/* Find NUMA domains with IOAT engines. */
++	bzero(dmapd, sizeof(dmapd));
++	for (i = 0; i < n; i++) {
++		dma = ioat_get_dmaengine(i, M_WAITOK);
++		if (dma == NULL)
++			continue;
++		t = 0;
++		ioat_get_domain(dma, &t);
++		dmapd[t]++;
++		ioat_put_dmaengine(dma);
++	}
++
++	/* Find NUMA domain with IOAT closest to NVDIMM. */
++	d1 = -1;
++	for (i = 0; i < vm_ndomains; i++) {
++		if (dmapd[i] == 0)
++			continue;
++		t = vm_phys_mem_affinity(i, sc->domain);
++		if (d1 < 0 || d > t) {
++			d1 = i;
++			d = t;
++		}
++	}
++
++	/* Find NUMA domain with IOAT closest to NTB. */
++	/* Try not to use the same domain for both uses. */
++	d2 = -1;
++	for (i = 0; i < vm_ndomains; i++) {
++		if (dmapd[i] == 0 || i == d1)
++			continue;
++		t = vm_phys_mem_affinity(i, sc->rdomain);
++		if (d2 < 0 || d > t) {
++			d2 = i;
++			d = t;
++		}
++	}
++
++	numch = dmapd[d1];
++	if (d2 >= 0 && numch < dmapd[d2])
++		numch = dmapd[d2];
++	sc->dma.ch = mallocarray(numch, sizeof(struct pmem_dma_ch), M_DEVBUF,
++	    M_ZERO | M_WAITOK);
++	num1 = num2 = 0;
++	for (i = 0; i < n; i++) {
++		dma = ioat_get_dmaengine(i, M_WAITOK);
++		if (dma == NULL)
++			continue;
++		t = 0;
++		ioat_get_domain(dma, &t);
++		if (t == d1) {
++			ioat_set_interrupt_coalesce(dma, 0);
++			sc->dma.ch[num1++].dma1 = dma;
++		} else if (t == d2) {
++			ioat_set_interrupt_coalesce(dma, 0);
++			sc->dma.ch[num2++].dma2 = dma;
++		} else
++			ioat_put_dmaengine(dma);
++	}
++	for (i = 0; i < numch; i++) {
++		ch = &sc->dma.ch[i];
++		mtx_init(&ch->mtx, "pmem_dma_ch", NULL, MTX_DEF);
++		SLIST_INIT(&ch->free_tr);
++		if (i >= num1)
++			ch->dma1 = sc->dma.ch[i % num1].dma1;
++		if (num2 > 0 && i >= num2)
++			ch->dma2 = sc->dma.ch[i % num2].dma2;
++		else if (num2 == 0)
++			ch->dma2 = sc->dma.ch[(i + 1) % num1].dma1;
++		maxio = MIN(ioat_get_max_io_size(ch->dma1),
++		    ioat_get_max_io_size(ch->dma2));
++		err = bus_dma_tag_create(NULL,
++		    1, 0, BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL, NULL,
++		    MAXPHYS, (MAXPHYS / PAGE_SIZE) + 1, MIN(MAXPHYS, maxio),
++		    0, busdma_lock_mutex, &ch->mtx, &ch->dmat);
++		if (err != 0) {
++			device_printf(dev, "tag create failed %d\n", err);
++			ioat_put_dmaengine(ch->dma1);
++			continue;
++		}
++		ch->trs = mallocarray(PMEM_NUM_TR, sizeof(struct pmem_dma_tr),
++		    M_DEVBUF, M_ZERO | M_WAITOK);
++		for (t = 0; t < PMEM_NUM_TR; t++) {
++			tr = &ch->trs[t];
++			tr->ch = ch;
++			tr->sc = sc;
++			err = bus_dmamap_create(ch->dmat, 0, &tr->dmam);
++			if (err != 0) {
++				device_printf(dev, "map create failed %d\n", err);
++				break;
++			}
++			SLIST_INSERT_HEAD(&ch->free_tr, tr, list);
++		}
++	}
++
++	/*
++	 * If we are writing to both NVDIMM and NTB, and they are in the
++	 * same domain, but we have DMAs from two domains for them, give
++	 * the NTB the closest DMA, since it is slower then NVDIMM, and
++	 * benefit there would benefit the whole transfer time.
++	 */
++	sc->dma.w2swap = (sc->domain == sc->rdomain && d2 >= 0 && d1 != d2);
++
++	sc->dma.numch = numch;
++	sc->dma.num1 = num1;
++	sc->dma.num2 = num2;
++}
++
++static void
++pmem_dma_shutdown(device_t dev)
++{
++	struct pmem_disk *sc = device_get_softc(dev);
++	struct pmem_dma_ch *ch;
++	struct pmem_dma_tr *tr;
++	int i;
++
++	for (i = 0; i < sc->dma.numch; i++) {
++		ch = &sc->dma.ch[i];
++		while ((tr = SLIST_FIRST(&ch->free_tr)) != NULL) {
++			SLIST_REMOVE_HEAD(&ch->free_tr, list);
++			bus_dmamap_destroy(ch->dmat, tr->dmam);
++		}
++		free(ch->trs, M_DEVBUF);
++		bus_dma_tag_destroy(ch->dmat);
++		mtx_destroy(&ch->mtx);
++	}
++	for (i = 0; i < sc->dma.num1; i++)
++		ioat_put_dmaengine(sc->dma.ch[i].dma1);
++	for (i = 0; i < sc->dma.num2; i++)
++		ioat_put_dmaengine(sc->dma.ch[i].dma2);
++	free(sc->dma.ch, M_DEVBUF);
++	sc->dma.ch = NULL;
++	sc->dma.numch = 0;
++}
++
++static int
++pmem_open(struct disk *dp)
++{
++	struct pmem_disk *sc = dp->d_drv1;
++
++	if (!cold && sc->dma.numch == 0)
++		pmem_dma_init(sc->dev);
++	sc->label->opened = 1;
++	return (0);
++}
++
++static int
++pmem_close(struct disk *dp)
++{
++	struct pmem_disk *sc = dp->d_drv1;
++
++	sc->label->opened = 0;
++	return (0);
++}
++
++void ntb_copy1(void *dst, void *src, size_t len);
++void ntb_copy2(void *dst1, void *dst2, void *src, size_t len);
++
++static void
++pmem_pio_strategy(struct bio *bp)
++{
++	struct pmem_disk *sc = bp->bio_disk->d_drv1;
++	uint8_t *addr, *nvaddr;
++	vm_offset_t page;
++	off_t done, off, moff, size;
++
++	for (done = 0; done < bp->bio_length; done += size) {
++		if (bp->bio_flags & BIO_UNMAPPED) {
++			moff = bp->bio_ma_offset + done;
++			page = pmap_quick_enter_page(bp->bio_ma[moff / PAGE_SIZE]);
++			moff %= PAGE_SIZE;
++			addr = (void *)(page + moff);
++			size = MIN(bp->bio_length - done, PAGE_SIZE - moff);
++		} else {
++			addr = bp->bio_data;
++			size = bp->bio_length;
++		}
++		off = bp->bio_offset + done;
++
++		if (bp->bio_cmd == BIO_READ) {
++			memcpy(addr, sc->vaddr + off, size);
++		} else {
++			if ((nvaddr = sc->rvaddr) != NULL) {
++				ntb_copy2(sc->vaddr + off, nvaddr + off,
++				    addr, size);
++			} else {
++				ntb_copy1(sc->vaddr + off, addr, size);
++			}
++		}
++
++		if (bp->bio_flags & BIO_UNMAPPED)
++			pmap_quick_remove_page(page);
++	}
++
++	biodone(bp);
++}
++
++static void
++pmem_dma_cb(void *arg, int error)
++{
++	struct pmem_dma_tr *tr = arg;
++	struct pmem_dma_ch *ch = tr->ch;
++	struct bio *bp = tr->bp;
++
++	mtx_lock(&ch->mtx);
++	if (--tr->inprog > 0) {
++		mtx_unlock(&ch->mtx);
++		return;
++	}
++	tr->bp = NULL;
++	bus_dmamap_unload(ch->dmat, tr->dmam);
++	SLIST_INSERT_HEAD(&ch->free_tr, tr, list);
++	mtx_unlock(&ch->mtx);
++
++	if (bp == NULL)
++		return;
++
++	if (error != 0) {
++		bp->bio_error = error;
++		bp->bio_flags |= BIO_ERROR;
++		bp->bio_resid = bp->bio_bcount;
++	}
++	biodone(bp);
++}
++
++static void
++pmem_dma_map(void *arg, bus_dma_segment_t *segs, int nseg, int error)
++{
++	struct pmem_dma_tr *tr = arg;
++	struct pmem_dma_ch *ch = tr->ch;
++	struct pmem_disk *sc = tr->sc;
++	struct bio *bp = tr->bp;
++	bus_dmaengine_callback_t cb;
++	vm_paddr_t rpaddr;
++	bus_dmaengine_t dma1, dma2;
++	int err, i, flags;
++	off_t off;
++
++	if (error != 0) {
++fallback:
++		bus_dmamap_unload(ch->dmat, tr->dmam);
++		SLIST_INSERT_HEAD(&ch->free_tr, tr, list);
++fallback2:
++		tr->bp = NULL;
++		pmem_pio_strategy(bp);
++		return;
++	}
++
++	rpaddr = (bp->bio_cmd == BIO_WRITE) ? sc->rpaddr : 0;
++	if (rpaddr != 0 && sc->dma.w2swap) {
++		dma1 = ch->dma2;
++		dma2 = ch->dma1;
++	} else {
++		dma1 = ch->dma1;
++		dma2 = ch->dma2;
++	}
++
++	/* First read/write to local NVDIMM. */
++	off = bp->bio_offset;
++	cb = NULL;
++	flags = DMA_NO_WAIT;
++	err = ioat_acquire_reserve(dma1, nseg, M_NOWAIT);
++	if (err != 0)
++		goto fallback;
++	for (i = 0; i < nseg; i++) {
++		if (i == nseg - 1) {
++			cb = pmem_dma_cb;
++			flags |= DMA_INT_EN;
++		}
++		if (bp->bio_cmd == BIO_READ) {
++			if (ioat_copy(dma1, segs[i].ds_addr, sc->paddr + off,
++			    segs[i].ds_len, cb, tr, flags) == NULL) {
++				ioat_release(dma1);
++				goto fallback;
++			}
++		} else {
++			if (ioat_copy(dma1, sc->paddr + off, segs[i].ds_addr,
++			    segs[i].ds_len, cb, tr, flags) == NULL) {
++				ioat_release(dma1);
++				goto fallback;
++			}
++		}
++		off += segs[i].ds_len;
++	}
++	ioat_release(dma1);
++	tr->inprog = 1;
++
++	/* Optional second write to remote NVDIMM. */
++	if (rpaddr == 0)
++		return;
++	off = bp->bio_offset;
++	cb = NULL;
++	flags = DMA_NO_WAIT;
++	err = ioat_acquire_reserve(dma2, nseg, M_NOWAIT);
++	if (err != 0)
++		goto fallback2;
++	for (i = 0; i < nseg; i++) {
++		if (i == nseg - 1) {
++			cb = pmem_dma_cb;
++			flags |= DMA_INT_EN;
++		}
++		if (ioat_copy(dma2, rpaddr + off, segs[i].ds_addr,
++		    segs[i].ds_len, cb, tr, flags) == NULL) {
++			ioat_release(dma2);
++			goto fallback2;
++		}
++		off += segs[i].ds_len;
++	}
++	ioat_release(dma2);
++	tr->inprog = 2;
++}
++
++static void
++pmem_dma_strategy(struct bio *bp)
++{
++	struct pmem_disk *sc = bp->bio_disk->d_drv1;
++	struct pmem_dma_ch *ch;
++	struct pmem_dma_tr *tr;
++	u_int c, err;
++
++	c = curcpu * sc->dma.numch / mp_ncpus;
++	ch = &sc->dma.ch[c];
++	mtx_lock(&ch->mtx);
++	tr = SLIST_FIRST(&ch->free_tr);
++	if (tr == NULL) {
++fallback:
++		mtx_unlock(&ch->mtx);
++		pmem_pio_strategy(bp);
++		return;
++	}
++
++	SLIST_REMOVE_HEAD(&ch->free_tr, list);
++	tr->bp = bp;
++	err = bus_dmamap_load_bio(ch->dmat, tr->dmam, bp, pmem_dma_map, tr, 0);
++	if (err != 0 && err != EINPROGRESS) {
++		device_printf(sc->dev, "bus_dmamap_load_bio error 0x%x\n",err);
++		tr->bp = NULL;
++		SLIST_INSERT_HEAD(&ch->free_tr, tr, list);
++		goto fallback;
++	}
++	mtx_unlock(&ch->mtx);
++}
++
++static void
++pmem_strategy(struct bio *bp)
++{
++	struct pmem_disk *sc = bp->bio_disk->d_drv1;
++
++	if (bp->bio_cmd != BIO_READ && bp->bio_cmd != BIO_WRITE) {
++		bp->bio_flags |= BIO_ERROR;
++		bp->bio_error = EOPNOTSUPP;
++		biodone(bp);
++		return;
++	}
++	if (bp->bio_cmd == BIO_WRITE) {
++		sc->label->empty = 0;
++		if (sc->rvaddr == NULL)
++			sc->label->dirty = 1;
++	}
++	if (sc->dma.numch > 0 &&
++	    bp->bio_length >= ntb_pmem_min_dma_size)
++		pmem_dma_strategy(bp);
++	else
++		pmem_pio_strategy(bp);
++}
++
++static void
++pmem_identify(driver_t *driver, device_t parent)
++{
++	device_t dev;
++	struct bios_smap *smapbase, *smap, *smapend;
++	caddr_t kmdp;
++	uint32_t smapsize;
++	int error, n;
++
++	if (resource_disabled("pmem", 0))
++		return;
++
++	/* Retrieve the system memory map from the loader. */
++	kmdp = preload_search_by_type("elf kernel");
++	if (kmdp == NULL)
++		kmdp = preload_search_by_type(ELF_KERN_STR);
++	smapbase = (struct bios_smap *)preload_search_info(kmdp,
++	    MODINFO_METADATA | MODINFOMD_SMAP);
++	if (smapbase == NULL)
++		return;
++	smapsize = *((u_int32_t *)smapbase - 1);
++	smapend = (struct bios_smap *)((uintptr_t)smapbase + smapsize);
++
++	n = 0;
++	for (smap = smapbase; smap < smapend; smap++) {
++		if (smap->type != 12 || smap->length == 0)
++			continue;
++
++		if (device_find_child(parent, "pmem", n) != NULL)
++			continue;
++
++		dev = BUS_ADD_CHILD(parent, 0, "pmem", n);
++		if (dev) {
++			error = bus_set_resource(dev, SYS_RES_MEMORY, 0,
++			    smap->base, smap->length);
++			if (error) {
++				device_printf(dev, "Setting resource failed");
++				device_delete_child(parent, dev);
++			}
++		} else {
++			device_printf(parent, "Adding pmem child failed");
++		}
++		n++;
++	}
++}
++
++static int
++pmem_probe(device_t dev)
++{
++	struct resource *res;
++	int rid;
++	uintmax_t size;
++	char buf[32];
++
++	rid = 0;
++	res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, 0);
++	if (res == NULL)
++		return (ENXIO);
++	size = rman_get_size(res);
++	bus_release_resource(dev, SYS_RES_MEMORY, rid, res);
++
++	snprintf(buf, sizeof(buf), "PMEM region %juGB",
++	    (uintmax_t)(size + 536870912) / 1073741824);
++	device_set_desc_copy(dev, buf);
++	return (0);
++}
++
++static int
++pmem_attach(device_t dev)
++{
++	struct pmem_disk *sc = device_get_softc(dev);
++	struct disk *disk;
++
++	sc->dev = dev;
++	sc->rid = 0;
++	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->rid, 0);
++	if (sc->res == NULL)
++		return (ENXIO);
++	sc->paddr = rman_get_start(sc->res);
++	sc->size = rman_get_size(sc->res);
++	sc->vaddr = pmap_mapdev_attr(sc->paddr, sc->size, VM_MEMATTR_WRITE_THROUGH);
++	sc->rpaddr = 0;
++	sc->rvaddr = NULL;
++
++	/* Get NUMA domain of the NVDIMM. */
++	if (bus_get_domain(dev, &sc->domain) != 0)
++#if __FreeBSD_version >= 1300130
++		sc->domain = vm_phys_domain(sc->paddr);
++#elif __FreeBSD_version >= 1200000
++		sc->domain = _vm_phys_domain(sc->paddr);
++#else
++		sc->domain = 0;
++#endif
++	sc->rdomain = sc->domain;	/* Will be overwritten by ntb_pmem. */
++
++	sc->label = (struct pmem_label *)(sc->vaddr + sc->size - PAGE_SIZE);
++	sc->rlabel = NULL;
++
++	if (sc->label->sign != NTBN_SIGN_LONG) {
++		device_printf(dev, "PMEM not labeled, new or data loss!\n");
++		memset(sc->label, 0, PAGE_SIZE);
++		sc->label->sign = NTBN_SIGN_LONG;
++		arc4rand(&sc->label->array, sizeof(sc->label->array), 0);
++		sc->label->empty = 1;
++		sc->label->dirty = 0;
++		sc->label->state = STATE_NONE;
++	}
++	sc->label->opened = 0;
++	sc->label->state = MIN(sc->label->state, STATE_IDLE);
++
++	disk = sc->disk = disk_alloc();
++	disk->d_open = pmem_open;
++	disk->d_close = pmem_close;
++	disk->d_strategy = pmem_strategy;
++	disk->d_name = "pmem";
++	disk->d_unit = device_get_unit(dev);
++	disk->d_drv1 = sc;
++	disk->d_maxsize = MAXPHYS;
++	disk->d_sectorsize = DEV_BSIZE;
++	disk->d_mediasize = sc->size - PAGE_SIZE;
++	disk->d_flags = DISKFLAG_UNMAPPED_BIO | DISKFLAG_DIRECT_COMPLETION;
++	snprintf(disk->d_ident, sizeof(disk->d_ident),
++	    "%016jX", (uintmax_t)sc->label->array);
++	snprintf(disk->d_descr, sizeof(disk->d_descr),
++	    "PMEM region %juGB", (uintmax_t)(sc->size + 536870912) /
++	    1073741824);
++	disk->d_rotation_rate = DISK_RR_NON_ROTATING;
++	disk_create(disk, DISK_VERSION);
++	return (0);
++}
++
++static int
++pmem_detach(device_t dev)
++{
++	struct pmem_disk *sc = device_get_softc(dev);
++
++	disk_destroy(sc->disk);
++	pmap_unmapdev((vm_offset_t)sc->vaddr, sc->size);
++	if (sc->dma.numch != 0)
++		pmem_dma_shutdown(dev);
++	bus_release_resource(dev, SYS_RES_MEMORY, sc->rid, sc->res);
++	return (0);
++}
++
++static device_method_t pmem_methods[] = {
++	/* Device interface */
++	DEVMETHOD(device_identify,	pmem_identify),
++	DEVMETHOD(device_probe,		pmem_probe),
++	DEVMETHOD(device_attach,	pmem_attach),
++	DEVMETHOD(device_detach,	pmem_detach),
++	{ 0, 0 }
++};
++
++static driver_t pmem_driver = {
++	"pmem",
++	pmem_methods,
++	sizeof(struct pmem_disk),
++};
++
++static devclass_t pmem_devclass;
++static devclass_t nvdimm_root_devclass;
++
++DRIVER_MODULE(pmem, nexus, pmem_driver, pmem_devclass, 0, 0);
++DRIVER_MODULE(pmem, nvdimm_root, pmem_driver, pmem_devclass, 0, 0);
++MODULE_DEPEND(pmem, ioat, 1, 1, 1);
++MODULE_VERSION(ixnvdimm, 1);
++
++/* Hooks for the ACPI CA debugging infrastructure */
++#define _COMPONENT	ACPI_BUS
++ACPI_MODULE_NAME("NVDIMM")
++
++struct nvdimm_root {
++};
++
++struct nvdimm_child {
++	ACPI_NFIT_SYSTEM_ADDRESS sa;
++	ACPI_NFIT_MEMORY_MAP mm;
++	ACPI_NFIT_CONTROL_REGION cr;
++	struct resource_list resources;
++	ACPI_HANDLE handle;
++	int adr;
++	int domain;
++	int interleave;
++	uint64_t size;
++	uint64_t arg3;
++};
++
++struct nvdimm_softc {
++	device_t sc_dev;
++	struct cdev *sc_devnode;
++};
++
++static d_ioctl_t nvdimm_ioctl;
++static struct cdevsw nvdimm_cdevsw = {
++        .d_version =    D_VERSION,
++        .d_ioctl =      nvdimm_ioctl,
++        .d_name =       "nvdimm",
++};
++
++/* 2f10e7a4-9e91-11e4-89d3-123b93f75cba */
++static const uint8_t nvdimm_root_dsm_guid[] = {
++	0xa4, 0xe7, 0x10, 0x2f,
++	0x91, 0x9e,
++	0xe4, 0x11,
++	0x89, 0xd3,
++	0x12, 0x3b, 0x93, 0xf7, 0x5c, 0xba
++};
++
++/* 1ee68b36-d4bd-4a1a-9a16-4f8e53d46e05 */
++static const uint8_t nvdimm_dsm_guid1[] = {
++	0x36, 0x8b, 0xe6, 0x1e,
++	0xbd, 0xd4,
++	0x1a, 0x4a,
++	0x9a, 0x16,
++	0x4f, 0x8e, 0x53, 0xd4, 0x6e, 0x05
++};
++
++/* 4309ac30-0d11-11e4-9191-0800200c9a66 */
++static const uint8_t nvdimm_dsm_guid2[] = {
++	0x30, 0xac, 0x09, 0x43,
++	0x11, 0x0d,
++	0xe4, 0x11,
++	0x91, 0x91,
++	0x08, 0x00, 0x20, 0x0c, 0x9a, 0x66
++};
++
++static ACPI_OBJECT *
++evaluate_dsm(ACPI_HANDLE handle, const uint8_t *uuid, int rev, int func,
++    ACPI_OBJECT *package)
++{
++	ACPI_BUFFER output = { ACPI_ALLOCATE_BUFFER, NULL };
++	ACPI_OBJECT_LIST input;
++	ACPI_OBJECT params[4];
++	int ret = 0;
++
++	input.Count = 4;
++	input.Pointer = params;
++	params[0].Type = ACPI_TYPE_BUFFER;
++	params[0].Buffer.Length = 16;
++	params[0].Buffer.Pointer = __DECONST(char *, uuid);
++	params[1].Type = ACPI_TYPE_INTEGER;
++	params[1].Integer.Value = rev;
++	params[2].Type = ACPI_TYPE_INTEGER;
++	params[2].Integer.Value = func;
++	if (package) {
++		params[3] = *package;
++	} else {
++		params[3].Type = ACPI_TYPE_PACKAGE;
++		params[3].Package.Count = 0;
++		params[3].Package.Elements = NULL;
++	}
++
++	ret = AcpiEvaluateObject(handle, "_DSM", &input, &output);
++	if (ACPI_FAILURE(ret))
++		return (NULL);
++
++	return ((ACPI_OBJECT *)output.Pointer);
++}
++
++static int
++evaluate_dsm_int(ACPI_HANDLE handle, const uint8_t *uuid, int rev, int func,
++    ACPI_OBJECT *package, uint64_t *resp)
++{
++	ACPI_OBJECT *obj;
++	uint64_t result;
++	int i, ret = 0;
++
++	obj = evaluate_dsm(handle, uuid, rev, func, package);
++	if (obj == NULL)
++		return (ENXIO);
++
++	result = 0;
++	switch (obj->Type) {
++	case ACPI_TYPE_INTEGER:
++		result = obj->Integer.Value;
++		break;
++	case ACPI_TYPE_BUFFER:
++		for (i = 0; i < obj->Buffer.Length && i < 8; i++)
++			result |= (((uint64_t)obj->Buffer.Pointer[i]) << (i * 8));
++		break;
++	default:
++		ret = EINVAL;
++		break;
++	}
++
++	AcpiOsFree(obj);
++	if (ret == 0 && resp != NULL)
++		*resp = result;
++	return (ret);
++}
++
++static int
++nvdimm_mdsm_sysctl_raw(SYSCTL_HANDLER_ARGS)
++{
++	device_t dev = arg1;
++	ACPI_OBJECT *obj, arg, argb;
++	struct nvdimm_child *ivar;
++	int error;
++
++	error = priv_check(req->td, PRIV_SYSCTL_DEBUG);
++	if (error)
++		return (error);
++
++	ivar = (struct nvdimm_child *)device_get_ivars(dev);
++	argb.Type = ACPI_TYPE_BUFFER;
++	argb.Buffer.Pointer = (void *)&ivar->arg3;
++	argb.Buffer.Length = sizeof(ivar->arg3);
++	arg.Type = ACPI_TYPE_PACKAGE;
++	arg.Package.Count = 1;
++	arg.Package.Elements = &argb;
++	obj = evaluate_dsm(ivar->handle, nvdimm_dsm_guid1, 1, arg2,
++	    ivar->arg3 != UINT64_MAX ? &arg : NULL);
++	if (obj == NULL)
++		return (ENXIO);
++	if (obj->Type != ACPI_TYPE_BUFFER) {
++		AcpiOsFree(obj);
++		return (EINVAL);
++	}
++
++	error = SYSCTL_OUT(req, obj->Buffer.Pointer, obj->Buffer.Length);
++
++	AcpiOsFree(obj);
++	if (error || !req->newptr)
++		return (error);
++	return (EINVAL);
++}
++
++static int
++nvdimm_read_i2c(device_t dev, int page, int off)
++{
++	ACPI_OBJECT *obj, arg, argb;
++	struct nvdimm_child *ivar;
++	int retval;
++	uint8_t buf[2], *res;
++
++	ivar = (struct nvdimm_child *)device_get_ivars(dev);
++	buf[0] = page;
++	buf[1] = off;
++	argb.Type = ACPI_TYPE_BUFFER;
++	argb.Buffer.Pointer = (void *)&buf;
++	argb.Buffer.Length = 2;
++	arg.Type = ACPI_TYPE_PACKAGE;
++	arg.Package.Count = 1;
++	arg.Package.Elements = &argb;
++	obj = evaluate_dsm(ivar->handle, nvdimm_dsm_guid1, 1, 27, &arg);
++	if (obj == NULL)
++		return (-1);
++	if (obj->Type != ACPI_TYPE_BUFFER || obj->Buffer.Length < 5) {
++		AcpiOsFree(obj);
++		return (-1);
++	}
++	res = obj->Buffer.Pointer;
++	if (res[0] != 0 || res[1] != 0 || res[2] != 0 || res[3] != 0) {
++		AcpiOsFree(obj);
++		return (-1);
++	}
++	retval = res[4];
++	AcpiOsFree(obj);
++	return (retval);
++}
++
++static int
++nvdimm_mdsm_sysctl_dump_i2c(SYSCTL_HANDLER_ARGS)
++{
++	device_t dev = arg1;
++	int error, page, off, val, snp, vsp, vnp;
++	struct sbuf sb;
++
++	error = priv_check(req->td, PRIV_SYSCTL_DEBUG);
++	if (error)
++		return (error);
++
++	snp = nvdimm_read_i2c(dev, 0, 1);
++	if (snp < 0)
++		return (EINVAL);
++	vsp = nvdimm_read_i2c(dev, 0, 2);
++	if (vsp < 0)
++		return (EINVAL);
++	vnp = nvdimm_read_i2c(dev, 0, 3);
++	if (vnp < 0)
++		return (EINVAL);
++
++	sbuf_new_for_sysctl(&sb, NULL, 65536, req);
++
++	sbuf_printf(&sb, "STD_NUM_PAGES: %d\n", snp);
++	sbuf_printf(&sb, "VENDOR_START_PAGES: %d\n", vsp);
++	sbuf_printf(&sb, "VENDOR_NUM_PAGES: %d\n", vnp);
++
++	for (page = 0; page < snp; page++) {
++		sbuf_printf(&sb, "Page 0x%02x:\n", page);
++		for (off = 0; off < 256; off++) {
++			val = nvdimm_read_i2c(dev, page, off);
++			if (val < 0)
++				break;
++			sbuf_printf(&sb, " %02x", val);
++			if ((off % 16) == 15)
++				sbuf_printf(&sb, "\n");
++		}
++	}
++	for (page = vsp; page < vsp+vnp; page++) {
++		sbuf_printf(&sb, "Page 0x%02x:\n", page);
++		for (off = 0; off < 256; off++) {
++			val = nvdimm_read_i2c(dev, page, off);
++			if (val < 0)
++				break;
++			sbuf_printf(&sb, " %02x", val);
++			if ((off % 16) == 15)
++				sbuf_printf(&sb, "\n");
++		}
++	}
++
++	error = sbuf_finish(&sb);
++	sbuf_delete(&sb);
++
++	if (error || !req->newptr)
++		return (error);
++	return (EINVAL);
++}
++
++static int
++nvdimm_mdsm_sysctl(SYSCTL_HANDLER_ARGS)
++{
++	device_t dev = arg1;
++	ACPI_OBJECT *obj;
++	struct nvdimm_child *ivar;
++	struct sbuf sb;
++	int error, val;
++
++	error = priv_check(req->td, PRIV_SYSCTL_DEBUG);
++	if (error)
++		return (error);
++
++	ivar = (struct nvdimm_child *)device_get_ivars(dev);
++	obj = evaluate_dsm(ivar->handle, nvdimm_dsm_guid1, 1, arg2, NULL);
++	if (obj == NULL)
++		return (ENXIO);
++	if (obj->Type != ACPI_TYPE_BUFFER || obj->Buffer.Length < 4) {
++		AcpiOsFree(obj);
++		return (EINVAL);
++	}
++	if (obj->Buffer.Pointer[0] != 0) {
++		AcpiOsFree(obj);
++		return (EIO);
++	}
++
++	sbuf_new_for_sysctl(&sb, NULL, 32, req);
++	if (arg2 == 10) {
++		sbuf_printf(&sb, "Critical Health Info: 0x%b",
++		    obj->Buffer.Pointer[4],
++		    "\020"
++		    "\001PERSISTENCY_LOST_ERROR"
++		    "\002WARNING_THRESHOLD_EXCEEDED"
++		    "\003PERSISTENCY_RESTORED"
++		    "\004BELOW_WARNING_THRESHOLD"
++		    "\005PERMANENT_HARDWARE_FAILURE"
++		    "\006EVENT_N_LOW"
++		    "\007ARM_INFO");
++	} else if (arg2 == 11) {
++		sbuf_printf(&sb, "Module Health: 0x%b\n",
++		    ((uint16_t)obj->Buffer.Pointer[5] << 8) | obj->Buffer.Pointer[4],
++		    "\020"
++		    "\001VOLTAGE_REGULATOR_FAILED"
++		    "\002VDD_LOST"
++		    "\003VPP_LOST"
++		    "\004VTT_LOST"
++		    "\005DRAM_NOT_SELF_REFRESH"
++		    "\006CONTROLLER_HARDWARE_ERROR"
++		    "\007NVM_CONTROLLER_ERROR"
++		    "\010NVM_LIFETIME_ERROR"
++		    "\011NOT_ENOUGH_ENERGY_FOR_CSAVE"
++		    "\012INVALID_FIRMWARE_ERROR"
++		    "\013CONFIG_DATA_ERROR"
++		    "\014NO_ES_PRESENT"
++		    "\015ES_POLICY_NOT_SET"
++		    "\016ES_HARDWARE_FAILURE"
++		    "\017ES_HEALTH_ASSESSMENT_ERROR");
++		sbuf_printf(&sb, "Module Current Temperature: %d C\n",
++		    ((uint16_t)obj->Buffer.Pointer[7] << 8) | obj->Buffer.Pointer[6]);
++		sbuf_printf(&sb, "Error Threshold Status: 0x%b\n",
++		    obj->Buffer.Pointer[8],
++		    "\020"
++		    "\001NVM_LIFETIME_ERROR"
++		    "\002ES_LIFETIME_ERROR"
++		    "\003ES_TEMP_ERROR");
++		sbuf_printf(&sb, "Warning Threshold Status: 0x%b\n",
++		    obj->Buffer.Pointer[9],
++		    "\020"
++		    "\001NVM_LIFETIME_WARNING"
++		    "\002ES_LIFETIME_WARNING"
++		    "\003ES_TEMP_WARNING");
++		sbuf_printf(&sb, "NVM Lifetime: %d%%\n",
++		    obj->Buffer.Pointer[10]);
++		sbuf_printf(&sb, "Count of DRAM Uncorrectable ECC Errors: %d\n",
++		    obj->Buffer.Pointer[11]);
++		sbuf_printf(&sb, "Count of DRAM Correctable ECC Error Above Threshold Events: %d",
++		    obj->Buffer.Pointer[12]);
++	} else if (arg2 == 12) {
++		sbuf_printf(&sb, "ES Lifetime Percentage: %d%%\n",
++		    obj->Buffer.Pointer[4]);
++		val = ((uint16_t)obj->Buffer.Pointer[6] << 8) | obj->Buffer.Pointer[5];
++		/* Workaround wrong units reported by Micron NVDIMMs. */
++		if ((val & 0x1000) != 0)
++			val = - (val & 0x0fff) / 16;
++		else if (val >= 128)
++			val = (val & 0x0fff) / 16;
++		sbuf_printf(&sb, "ES Current Temperature: %d C\n", val);
++		sbuf_printf(&sb, "Total Runtime: %d",
++		    ((uint32_t)obj->Buffer.Pointer[10] << 24) |
++		    ((uint32_t)obj->Buffer.Pointer[9] << 16) |
++		    ((uint32_t)obj->Buffer.Pointer[8] << 8) | obj->Buffer.Pointer[7]);
++	}
++	AcpiOsFree(obj);
++
++	error = sbuf_finish(&sb);
++	sbuf_delete(&sb);
++
++	if (error || !req->newptr)
++		return (error);
++	return (EINVAL);
++}
++
++static int
++nvdimm_flags_sysctl(SYSCTL_HANDLER_ARGS)
++{
++	device_t dev = arg1;
++	struct nvdimm_child *ivar;
++	struct sbuf sb;
++	int error;
++
++	error = priv_check(req->td, PRIV_SYSCTL_DEBUG);
++	if (error)
++		return (error);
++
++	ivar = (struct nvdimm_child *)device_get_ivars(dev);
++
++	sbuf_new_for_sysctl(&sb, NULL, 32, req);
++	sbuf_printf(&sb, "0x%b",
++	    ivar->mm.Flags, "\020"
++	    "\001SAVE_FAILED\002RESTORE_FAILED"
++	    "\003FLUSH_FAILED\004NOT_ARMED"
++	    "\005HEALTH_OBSERVED\006HEALTH_ENABLED"
++	    "\007MAP_FAILED");
++	error = sbuf_finish(&sb);
++	sbuf_delete(&sb);
++
++	if (error || !req->newptr)
++		return (error);
++	return (EINVAL);
++}
++
++int
++nvdimm_ioctl(struct cdev *cdev, u_long cmd, caddr_t data,
++    int flags, struct thread *td)
++{
++	device_t dev = cdev->si_drv1;
++	struct nvdimm_child *ivar = (struct nvdimm_child *)device_get_ivars(dev);
++	int error = EINVAL;
++
++	switch (cmd) {
++	case IXNVDIMM_INFO:
++	{
++		struct ixnvdimm_info *i = (struct ixnvdimm_info *)data;
++
++		i->VendorId = ivar->cr.VendorId;
++		i->DeviceId = ivar->cr.DeviceId;
++		i->RevisionId = ivar->cr.RevisionId;
++		i->SubsystemVendorId = ivar->cr.SubsystemVendorId;
++		i->SubsystemDeviceId = ivar->cr.SubsystemDeviceId;
++		i->SubsystemRevisionId = ivar->cr.SubsystemRevisionId;
++		i->SerialNumber = ivar->cr.SerialNumber;
++		return (0);
++	}
++	case IXNVDIMM_DSM:
++	{
++		struct ixnvdimm_dsm *d = (struct ixnvdimm_dsm *)data;
++		ACPI_OBJECT *obj, arg, argb;
++		uint8_t *buf;
++		char uuid[16];
++
++		buf = malloc(d->in_size, M_DEVBUF, M_WAITOK | M_ZERO);
++		error = copyin(d->in_buf, buf, d->in_size);
++		if (error) {
++			free(buf, M_DEVBUF);
++			return (error);
++		}
++		argb.Type = ACPI_TYPE_BUFFER;
++		argb.Buffer.Pointer = (void *)buf;
++		argb.Buffer.Length = d->in_size;
++		arg.Type = ACPI_TYPE_PACKAGE;
++		arg.Package.Count = 1;
++		arg.Package.Elements = &argb;
++		le_uuid_enc(uuid, &d->guid);
++		obj = evaluate_dsm(ivar->handle, uuid, d->rev, d->func, &arg);
++		if (obj == NULL) {
++			free(buf, M_DEVBUF);
++			return (EIO);
++		}
++		if (obj->Type != ACPI_TYPE_BUFFER) {
++			AcpiOsFree(obj);
++			free(buf, M_DEVBUF);
++			return (EIO);
++		}
++		error = copyout(obj->Buffer.Pointer, d->out_buf,
++		    MIN(d->out_size, obj->Buffer.Length));
++		d->out_size = obj->Buffer.Length;
++		AcpiOsFree(obj);
++		free(buf, M_DEVBUF);
++		return (error);
++	}
++	};
++
++	return (error);
++}
++
++static void
++nvdimm_notify(ACPI_HANDLE handle, UINT32 notify, void *context)
++{
++	device_t dev = context;
++
++	device_printf(dev, "NOTIFY %x\n", notify);
++}
++
++static int
++nvdimm_probe(device_t dev)
++{
++	struct nvdimm_child *ivar;
++	char buf[40];
++
++	ivar = (struct nvdimm_child *)device_get_ivars(dev);
++	ACPI_FUNCTION_TRACE((char *)(uintptr_t) __func__);
++
++	if (acpi_disabled("nvdimm"))
++		return (ENXIO);
++
++	snprintf(buf, sizeof(buf), "NVDIMM region %juGB interleave %d",
++	    (uintmax_t)(ivar->size + 536870912) / 1073741824, ivar->interleave);
++	device_set_desc_copy(dev, buf);
++	return (0);
++}
++
++static int
++nvdimm_attach(device_t dev)
++{
++	struct nvdimm_softc *sc = device_get_softc(dev);
++	struct sysctl_ctx_list *ctx = device_get_sysctl_ctx(dev);
++	struct sysctl_oid *tree = device_get_sysctl_tree(dev);
++	struct nvdimm_child *ivar;
++	struct make_dev_args devargs;
++	char buf[16];
++	uint64_t val;
++	ACPI_BUFFER output;
++	ACPI_OBJECT *obj;
++	ACPI_STATUS status;
++	int i, err;
++
++	ivar = (struct nvdimm_child *)device_get_ivars(dev);
++	ivar->arg3 = UINT64_MAX;
++
++	if (ivar->mm.Flags & ~ACPI_NFIT_MEM_HEALTH_ENABLED) {
++		device_printf(dev, "Flags: 0x%b\n",
++		    ivar->mm.Flags, "\020"
++		    "\001SAVE_FAILED\002RESTORE_FAILED"
++		    "\003FLUSH_FAILED\004NOT_ARMED"
++		    "\005HEALTH_OBSERVED\006HEALTH_ENABLED"
++		    "\007MAP_FAILED");
++	}
++	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
++	    "flags", CTLFLAG_RD | CTLTYPE_STRING | CTLFLAG_MPSAFE,
++	    dev, 0, nvdimm_flags_sysctl, "A", "NFIT flags");
++
++	status = AcpiInstallNotifyHandler(ivar->handle, ACPI_DEVICE_NOTIFY,
++	    nvdimm_notify, dev);
++	if (ACPI_FAILURE(status))
++		device_printf(dev, "failed to install notify handler\n");
++
++	output.Length = ACPI_ALLOCATE_BUFFER;
++	output.Pointer = NULL;
++	status = AcpiEvaluateObject(ivar->handle, "_NCH", NULL, &output);
++	if (!ACPI_FAILURE(status)) {
++		obj = (ACPI_OBJECT *)output.Pointer;
++		if (obj->Type == ACPI_TYPE_BUFFER &&
++		    le16dec(&obj->Buffer.Pointer[0]) == 0) {
++			val = le16dec(&obj->Buffer.Pointer[4]);
++			if (val & 1) {
++				device_printf(dev,
++				    "Overall Health Status Flags: 0x%b\n",
++				    le32dec(&obj->Buffer.Pointer[6]),
++				    "\020"
++				    "\001MAINTENANCE_NEEDED"
++				    "\002PERFORMANCE_DEGRADED"
++				    "\011WRITE_PERSISTENCY_LOSS_IN_EVENT_OF_POWER_LOSS"
++				    "\012WRITE_PERSISTENCY_LOSS_IN_EVENT_OF_OFFLINE"
++				    "\013WRITE_PERSISTENCY_LOSS_IMMINENT"
++				    "\021ALL_DATA_LOSS_IN_THE_EVENT_OF_POWER_LOSS"
++				    "\022ALL_DATA_LOSS_IN_THE_EVENT_OF_OFFLINE"
++				    "\023ALL_DATA_LOSS_IMMINENT"
++				    );
++			}
++			if (val & 2) {
++				device_printf(dev,
++				    "Overall Health Status Attributes: 0x%b\n",
++				    le32dec(&obj->Buffer.Pointer[10]),
++				    "\020"
++				    "\001PERMANENT_HEALTH_CONDITION"
++				    );
++			}
++		}
++		AcpiOsFree(obj);
++	}
++	output.Length = ACPI_ALLOCATE_BUFFER;
++	output.Pointer = NULL;
++	status = AcpiEvaluateObject(ivar->handle, "_NBS", NULL, &output);
++	if (!ACPI_FAILURE(status)) {
++		obj = (ACPI_OBJECT *)output.Pointer;
++		if (obj->Type == ACPI_TYPE_BUFFER &&
++		    le16dec(&obj->Buffer.Pointer[0]) == 0) {
++			val = le16dec(&obj->Buffer.Pointer[4]);
++			if (val & 1) {
++				device_printf(dev,
++				    "Data Loss Count: %u\n",
++				    le32dec(&obj->Buffer.Pointer[6]));
++			}
++		}
++		AcpiOsFree(obj);
++	}
++
++	if (evaluate_dsm_int(ivar->handle, nvdimm_dsm_guid1, 1, 0, NULL, &val) == 0
++	    && val > 1) {
++		if (bootverbose)
++			device_printf(dev, "Microsoft _DSM supported (0x%jx)\n", val);
++		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
++		    "critical_health", CTLFLAG_RD | CTLTYPE_STRING |
++		    CTLFLAG_MPSAFE, dev, 10,
++		    nvdimm_mdsm_sysctl, "A", "Get Critical Health Info");
++		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
++		    "nvdimm_health", CTLFLAG_RD | CTLTYPE_STRING |
++		    CTLFLAG_MPSAFE, dev, 11,
++		    nvdimm_mdsm_sysctl, "A", "Get NVDIMM-N Health Info");
++		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
++		    "es_health", CTLFLAG_RD | CTLTYPE_STRING |
++		    CTLFLAG_MPSAFE, dev, 12,
++		    nvdimm_mdsm_sysctl, "A", "Get Energy Source Health Info");
++		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
++		    "dump_i2c", CTLFLAG_RD | CTLTYPE_STRING |
++		    CTLFLAG_MPSAFE | CTLFLAG_SKIP, dev, 0,
++		    nvdimm_mdsm_sysctl_dump_i2c, "A", "Dump all i2c pages");
++		SYSCTL_ADD_QUAD(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
++		    "arg3", CTLFLAG_RW | CTLFLAG_SKIP,
++		    &ivar->arg3, "Argument 3 for raw function calls");
++		for (i = 0; i < 32; i++) {
++			snprintf(buf, sizeof(buf), "func%d", i);
++			SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
++			    buf, CTLFLAG_RD | CTLTYPE_OPAQUE |
++			    CTLFLAG_MPSAFE | CTLFLAG_SKIP, dev, i,
++			    nvdimm_mdsm_sysctl_raw, "S", "Raw result of function call");
++		}
++	}
++	if (evaluate_dsm_int(ivar->handle, nvdimm_dsm_guid2, 1, 0, NULL, &val) == 0
++	    && val > 1) {
++		if (bootverbose)
++			device_printf(dev, "Intel _DSM supported (0x%jx)\n", val);
++	}
++
++	make_dev_args_init(&devargs);
++	devargs.mda_devsw = &nvdimm_cdevsw;
++	devargs.mda_uid = UID_ROOT;
++	devargs.mda_gid = GID_WHEEL;
++	devargs.mda_mode = 0600;
++	devargs.mda_si_drv1 = dev;
++	err = make_dev_s(&devargs, &sc->sc_devnode, "nvdimm%d",
++	    device_get_unit(dev));
++	if (err != 0)
++		device_printf(dev, "failed to create character device\n");
++
++	return (0);
++}
++
++static int
++nvdimm_detach(device_t dev)
++{
++	struct nvdimm_softc *sc = device_get_softc(dev);
++	struct nvdimm_child *ivar;
++
++	ivar = (struct nvdimm_child *)device_get_ivars(dev);
++
++	if (sc->sc_devnode)
++		destroy_dev(sc->sc_devnode);
++
++	AcpiRemoveNotifyHandler(ivar->handle, ACPI_DEVICE_NOTIFY,
++	    nvdimm_notify);
++
++	return (0);
++}
++
++static device_method_t nvdimm_methods[] = {
++	/* Device interface */
++	DEVMETHOD(device_probe,		nvdimm_probe),
++	DEVMETHOD(device_attach,	nvdimm_attach),
++	DEVMETHOD(device_detach,	nvdimm_detach),
++	{ 0, 0 }
++};
++
++static driver_t nvdimm_driver = {
++	"nvdimm",
++	nvdimm_methods,
++	sizeof(struct nvdimm_softc),
++};
++
++static devclass_t nvdimm_devclass;
++DRIVER_MODULE(nvdimm, nvdimm_root, nvdimm_driver, nvdimm_devclass, 0, 0);
++
++static char *nvdimm_root_ids[] = { "ACPI0012", NULL };
++static uint8_t pmem_uuid[ACPI_UUID_LENGTH] = {
++	0x79, 0xd3, 0xf0, 0x66, 0xf3, 0xb4, 0x74, 0x40,
++	0xac, 0x43, 0x0d, 0x33, 0x18, 0xb7, 0x8c, 0xdb
++};
++
++static void
++nvdimm_root_notify(ACPI_HANDLE handle, UINT32 notify, void *context)
++{
++	device_t dev = context;
++
++	device_printf(dev, "NOTIFY %x\n", notify);
++}
++
++static int
++nvdimm_root_probe(device_t dev)
++{
++	ACPI_FUNCTION_TRACE((char *)(uintptr_t) __func__);
++
++	if (acpi_disabled("nvdimm"))
++		return (ENXIO);
++	if (acpi_get_handle(dev) != NULL &&
++	    ACPI_ID_PROBE(device_get_parent(dev), dev, nvdimm_root_ids, NULL) > 0)
++		return (ENXIO);
++
++	device_set_desc(dev, "NVDIMM root");
++	return (0);
++}
++
++struct nvdimm_root_walk_ctx {
++	device_t	dev;
++	ACPI_NFIT_SYSTEM_ADDRESS **sas;
++	ACPI_NFIT_MEMORY_MAP **mms;
++	ACPI_NFIT_CONTROL_REGION **crs;
++	u_int		san, mmn, crn;
++};
++
++static ACPI_STATUS
++nvdimm_root_walk_dev(ACPI_HANDLE handle, UINT32 level, void *ctx, void **st)
++{
++	struct nvdimm_root_walk_ctx *wctx = ctx;
++	device_t dev = wctx->dev;
++	ACPI_STATUS status;
++	ACPI_NFIT_SYSTEM_ADDRESS **sas = wctx->sas;
++	ACPI_NFIT_MEMORY_MAP *mm;
++	ACPI_NFIT_CONTROL_REGION **crs = wctx->crs;
++	struct nvdimm_child	*ivar;
++	device_t	child;
++	uint64_t	size;
++	u_int adr, sai, mmi, cri;
++
++	status = acpi_GetInteger(handle, "_ADR", &adr);
++	if (ACPI_FAILURE(status))
++		return_ACPI_STATUS(status);
++
++	for (mmi = 0; mmi < wctx->mmn; mmi++) {
++		if (wctx->mms[mmi]->DeviceHandle == adr)
++			break;
++	}
++	if (mmi >= wctx->mmn)
++		return_ACPI_STATUS(AE_OK);
++
++	mm = wctx->mms[mmi];
++	if (mm->RangeIndex == 0)
++		return_ACPI_STATUS(AE_OK);
++	for (sai = 0; sai < wctx->san; sai++) {
++		if (sas[sai]->RangeIndex == mm->RangeIndex)
++			break;
++	}
++	if (sai >= wctx->san) {
++		device_printf(dev, "Unknown SPA Range Structure Index: %u\n",
++		    mm->RangeIndex);
++		return_ACPI_STATUS(AE_OK);
++	}
++
++	if (mm->RegionIndex == 0)
++		return_ACPI_STATUS(AE_OK);
++	for (cri = 0; cri < wctx->crn; cri++) {
++		if (crs[cri]->RegionIndex == mm->RegionIndex)
++			break;
++	}
++	if (cri >= wctx->crn) {
++		device_printf(dev, "Unknown NVDIMM Control Region Structure Index: %u\n",
++		    mm->RegionIndex);
++		return_ACPI_STATUS(AE_OK);
++	}
++
++	if (device_find_child(dev, "nvdimm", mm->RegionId) != NULL)
++		return_ACPI_STATUS(AE_OK);
++
++	ivar = malloc(sizeof(struct nvdimm_child), M_DEVBUF,
++		M_WAITOK | M_ZERO);
++	ivar->sa = *sas[sai];
++	ivar->mm = *mm;
++	ivar->cr = *crs[cri];
++	resource_list_init(&ivar->resources);
++	size = mm->RegionSize * MAX(1, mm->InterleaveWays);
++	resource_list_add(&ivar->resources, SYS_RES_MEMORY,
++	    0, sas[sai]->Address + mm->RegionOffset,
++	    sas[sai]->Address + mm->RegionOffset + size - 1, size);
++	ivar->handle = handle;
++	ivar->adr = adr;
++	if (sas[sai]->Flags & ACPI_NFIT_PROXIMITY_VALID) {
++		ivar->domain = acpi_map_pxm_to_vm_domainid(
++		    sas[sai]->ProximityDomain);
++	} else {
++		ivar->domain = -1;
++	}
++	ivar->size = mm->RegionSize;
++	ivar->interleave = mm->InterleaveWays;
++
++	child = device_add_child(dev, "nvdimm", mm->RegionId);
++	if (child) {
++		device_set_ivars(child, ivar);
++	} else {
++		device_printf(dev, "Adding nvdimm%u failed\n",
++		    mm->RegionId);
++	}
++
++	return_ACPI_STATUS(AE_OK);
++}
++
++static int
++nvdimm_root_attach(device_t dev)
++{
++	ACPI_TABLE_NFIT	*nfit;
++	ACPI_STATUS	status;
++	ACPI_NFIT_HEADER	*subtable;
++	uint8_t		*end;
++	ACPI_NFIT_SYSTEM_ADDRESS *sas[64], *sa;
++	ACPI_NFIT_MEMORY_MAP *mms[64];
++	ACPI_NFIT_CONTROL_REGION *crs[64];
++	struct nvdimm_root_walk_ctx wctx;
++	struct nvdimm_child	*ivar;
++	device_t	child;
++	uint64_t	val;
++	int		error, sai, san = 0, mmn = 0, crn = 0;
++
++	/* Search for NFIT table. */
++	status = AcpiGetTable("NFIT", 0, (ACPI_TABLE_HEADER **)&nfit);
++	if (ACPI_FAILURE(status))
++		return (ENXIO);
++
++	subtable = (ACPI_NFIT_HEADER *)(nfit + 1);
++	end = (uint8_t *)nfit + nfit->Header.Length;
++	while ((uint8_t *)subtable < end) {
++		if (subtable->Length < sizeof(ACPI_NFIT_HEADER)) {
++			device_printf(dev,
++			    "Invalid subtable length: %u", subtable->Length);
++			return (EIO);
++		}
++		if (subtable->Type == ACPI_NFIT_TYPE_SYSTEM_ADDRESS)
++			sas[san++] = (ACPI_NFIT_SYSTEM_ADDRESS *)subtable;
++		if (subtable->Type == ACPI_NFIT_TYPE_MEMORY_MAP)
++			mms[mmn++] = (ACPI_NFIT_MEMORY_MAP *)subtable;
++		if (subtable->Type == ACPI_NFIT_TYPE_CONTROL_REGION)
++			crs[crn++] = (ACPI_NFIT_CONTROL_REGION *)subtable;
++		subtable = (ACPI_NFIT_HEADER *)((char *)subtable +
++		    subtable->Length);
++	}
++
++	wctx.dev = dev;
++	wctx.sas = sas;
++	wctx.mms = mms;
++	wctx.crs = crs;
++	wctx.san = san;
++	wctx.mmn = mmn;
++	wctx.crn = crn;
++	status = AcpiWalkNamespace(ACPI_TYPE_DEVICE, acpi_get_handle(dev), 100,
++	    nvdimm_root_walk_dev, NULL, &wctx, NULL);
++
++	for (sai = 0; sai < san; sai++) {
++		sa = sas[sai];
++		if (memcmp(sa->RangeGuid, pmem_uuid, sizeof(pmem_uuid)) != 0)
++			continue;
++		if (device_find_child(dev, "pmem", sa->RangeIndex - 1) != NULL)
++			return_ACPI_STATUS(AE_OK);
++
++		ivar = malloc(sizeof(struct nvdimm_child), M_DEVBUF,
++		    M_WAITOK | M_ZERO);
++		ivar->sa = *sa;
++		resource_list_init(&ivar->resources);
++		resource_list_add(&ivar->resources, SYS_RES_MEMORY,
++		    0, sa->Address, sa->Address + sa->Length, sa->Length);
++		if (sa->Flags & ACPI_NFIT_PROXIMITY_VALID) {
++			ivar->domain = acpi_map_pxm_to_vm_domainid(
++			    sa->ProximityDomain);
++		} else {
++			ivar->domain = -1;
++		}
++		ivar->size = sa->Length;
++
++		child = device_add_child(dev, "pmem", sa->RangeIndex - 1);
++		if (child) {
++			device_set_ivars(child, ivar);
++		} else {
++			device_printf(dev, "Adding pmem%u failed\n",
++			    sa->RangeIndex - 1);
++		}
++	}
++
++	AcpiPutTable((ACPI_TABLE_HEADER *)nfit);
++
++	if (evaluate_dsm_int(acpi_get_handle(dev), nvdimm_root_dsm_guid, 1, 0, NULL, &val) == 0
++	    && val > 1) {
++		if (bootverbose)
++			device_printf(dev, "_DSM supported (0x%jx)\n", val);
++	}
++
++	error = bus_generic_attach(dev);
++	if (error != 0)
++		device_printf(dev, "bus_generic_attach failed\n");
++
++	status = AcpiInstallNotifyHandler(acpi_get_handle(dev), ACPI_DEVICE_NOTIFY,
++	    nvdimm_root_notify, dev);
++	if (ACPI_FAILURE(status))
++		device_printf(dev, "failed to install notify handler\n");
++
++	return (0);
++}
++
++static int
++nvdimm_root_detach(device_t dev)
++{
++
++	AcpiRemoveNotifyHandler(acpi_get_handle(dev), ACPI_DEVICE_NOTIFY,
++	    nvdimm_root_notify);
++
++	device_delete_children(dev);
++	return (0);
++}
++
++static int
++nvdimm_root_get_domain(device_t dev, device_t child, int *domain)
++{
++	struct nvdimm_child *ivar;
++
++	ivar = (struct nvdimm_child *)device_get_ivars(child);
++	if (ivar->domain >= 0) {
++		*domain = ivar->domain;
++		return (0);
++	}
++	return (bus_generic_get_domain(dev, child, domain));
++}
++
++static struct resource_list *
++nvdimm_root_get_resource_list(device_t dev, device_t child)
++{
++	struct nvdimm_child *ivar;
++
++	ivar = (struct nvdimm_child *)device_get_ivars(child);
++	return &ivar->resources;
++}
++
++static int
++nvdimm_root_print_child(device_t dev, device_t child)
++{
++	struct nvdimm_child *ivar;
++	struct resource_list *rl;
++	int	retval = 0;
++
++	ivar = (struct nvdimm_child *)device_get_ivars(child);
++	rl = &ivar->resources;
++
++	retval += bus_print_child_header(dev, child);
++	if (STAILQ_FIRST(rl))
++		retval += printf(" at");
++	retval += resource_list_print_type(rl, "iomem", SYS_RES_MEMORY, "%#jx");
++	retval += bus_print_child_domain(dev, child);
++	retval += bus_print_child_footer(dev, child);
++
++	return (retval);
++}
++
++#if (__FreeBSD_version >= 1400024)
++static int
++nvdimm_root_child_pnpinfo(device_t dev, device_t child, struct sbuf *sb)
++{
++	struct nvdimm_child *ivar;
++	struct uuid uuid;
++	char ubuf[38];
++
++	ivar = (struct nvdimm_child *)device_get_ivars(child);
++	if (ivar->handle != NULL) {
++		sbuf_printf(sb,
++		    "vendor=0x%04x device=0x%04x revision=0x%02x "
++		    "subvendor=0x%04x subdevice=0x%04x subrevision=0x%02x "
++		    "class=0x%04x",
++		    ivar->cr.VendorId, ivar->cr.DeviceId, ivar->cr.RevisionId,
++		    ivar->cr.SubsystemVendorId, ivar->cr.SubsystemDeviceId,
++		    ivar->cr.SubsystemRevisionId, ivar->cr.Code);
++	} else {
++		le_uuid_dec(ivar->sa.RangeGuid, &uuid);
++		snprintf_uuid(ubuf, sizeof(ubuf), &uuid);
++		sbuf_printf(sb, "type=%s", ubuf);
++	}
++	return (0);
++}
++
++static int
++nvdimm_root_child_location(device_t dev, device_t child, struct sbuf *sb)
++{
++	struct nvdimm_child *ivar;
++	uint32_t a;
++
++	ivar = (struct nvdimm_child *)device_get_ivars(child);
++	if (ivar->handle != NULL) {
++		a = ivar->adr;
++		if (!ACPI_ADR_NVDIMM_PU(ivar->adr)) {
++			sbuf_printf(sb, "node=%u socket=%u "
++			    "controller=%u channel=%u dimm=%u ",
++			    ACPI_ADR_NVDIMM_NODE(a), ACPI_ADR_NVDIMM_SOCK(a),
++			    ACPI_ADR_NVDIMM_CTRL(a), ACPI_ADR_NVDIMM_CHAN(a),
++			    ACPI_ADR_NVDIMM_DIMM(a));
++		}
++		sbuf_printf(sb,
++		    "handle=%s _ADR=0x%x PhysicalId=0x%04x SerialNumber=0x%08X",
++		    acpi_name(ivar->handle), a, ivar->mm.PhysicalId,
++		    be32toh(ivar->cr.SerialNumber));
++	} else {
++		sbuf_printf(sb, "RangeIndex=0x%04x", ivar->sa.RangeIndex);
++	}
++	return (0);
++}
++#else
++static int
++nvdimm_root_child_pnpinfo_str(device_t dev, device_t child, char *buf,
++    size_t buflen)
++{
++	struct nvdimm_child *ivar;
++	struct uuid uuid;
++	char ubuf[38];
++
++	ivar = (struct nvdimm_child *)device_get_ivars(child);
++	if (ivar->handle != NULL) {
++		snprintf(buf, buflen,
++		    "vendor=0x%04x device=0x%04x revision=0x%02x "
++		    "subvendor=0x%04x subdevice=0x%04x subrevision=0x%02x "
++		    "class=0x%04x",
++		    ivar->cr.VendorId, ivar->cr.DeviceId, ivar->cr.RevisionId,
++		    ivar->cr.SubsystemVendorId, ivar->cr.SubsystemDeviceId,
++		    ivar->cr.SubsystemRevisionId, ivar->cr.Code);
++	} else {
++		le_uuid_dec(ivar->sa.RangeGuid, &uuid);
++		snprintf_uuid(ubuf, sizeof(ubuf), &uuid);
++		snprintf(buf, buflen, "type=%s", ubuf);
++	}
++	return (0);
++}
++
++static int
++nvdimm_root_child_location_str(device_t dev, device_t child, char *buf,
++    size_t buflen)
++{
++	struct nvdimm_child *ivar;
++	int n = 0;
++	uint32_t a;
++
++	ivar = (struct nvdimm_child *)device_get_ivars(child);
++	if (ivar->handle != NULL) {
++		a = ivar->adr;
++		if (!ACPI_ADR_NVDIMM_PU(ivar->adr)) {
++			n = snprintf(buf, buflen, "node=%u socket=%u "
++			    "controller=%u channel=%u dimm=%u ",
++			    ACPI_ADR_NVDIMM_NODE(a), ACPI_ADR_NVDIMM_SOCK(a),
++			    ACPI_ADR_NVDIMM_CTRL(a), ACPI_ADR_NVDIMM_CHAN(a),
++			    ACPI_ADR_NVDIMM_DIMM(a));
++		}
++		snprintf(buf + n, buflen - n,
++		    "handle=%s _ADR=0x%x PhysicalId=0x%04x SerialNumber=0x%08X",
++		    acpi_name(ivar->handle), a, ivar->mm.PhysicalId,
++		    be32toh(ivar->cr.SerialNumber));
++	} else {
++		snprintf(buf, buflen, "RangeIndex=0x%04x", ivar->sa.RangeIndex);
++	}
++	return (0);
++}
++#endif
++
++static device_method_t nvdimm_root_methods[] = {
++	/* Device interface */
++	DEVMETHOD(device_probe,		nvdimm_root_probe),
++	DEVMETHOD(device_attach,	nvdimm_root_attach),
++	DEVMETHOD(device_detach,	nvdimm_root_detach),
++
++	DEVMETHOD(bus_print_child,	nvdimm_root_print_child),
++#if (__FreeBSD_version >= 1400024)
++	DEVMETHOD(bus_child_pnpinfo, nvdimm_root_child_pnpinfo),
++	DEVMETHOD(bus_child_location, nvdimm_root_child_location),
++#else
++	DEVMETHOD(bus_child_pnpinfo_str, nvdimm_root_child_pnpinfo_str),
++	DEVMETHOD(bus_child_location_str, nvdimm_root_child_location_str),
++#endif
++	DEVMETHOD(bus_get_domain,	nvdimm_root_get_domain),
++	DEVMETHOD(bus_get_resource_list,nvdimm_root_get_resource_list),
++	DEVMETHOD(bus_alloc_resource,	bus_generic_rl_alloc_resource),
++	DEVMETHOD(bus_release_resource,	bus_generic_rl_release_resource),
++	DEVMETHOD(bus_activate_resource, bus_generic_activate_resource),
++	DEVMETHOD(bus_deactivate_resource, bus_generic_deactivate_resource),
++	DEVMETHOD(bus_get_resource,	bus_generic_rl_get_resource),
++	DEVMETHOD(bus_set_resource,	bus_generic_rl_set_resource),
++	DEVMETHOD(bus_delete_resource,	bus_generic_rl_delete_resource),
++	{ 0, 0 }
++};
++
++static driver_t nvdimm_root_driver = {
++	"nvdimm_root",
++	nvdimm_root_methods,
++	sizeof(struct nvdimm_root),
++};
++
++DRIVER_MODULE(nvdimm_root, acpi, nvdimm_root_driver, nvdimm_root_devclass, 0, 0);
++MODULE_DEPEND(nvdimm_root, acpi, 1, 1, 1);
++
++static void
++ntb_pmem_start(void *data)
++{
++	device_t dev = data;
++	struct ntb_pmem *sc = device_get_softc(dev);
++
++	if (sc->ntb_rootmount != NULL) {
++		device_printf(dev, "Releasing root mount\n");
++		root_mount_rel(sc->ntb_rootmount);
++		sc->ntb_rootmount = NULL;
++	}
++}
++
++static void
++ntb_pmem_sync(void *data)
++{
++	device_t dev = data;
++	struct ntb_pmem *scn = device_get_softc(dev);
++	struct pmem_disk *sc = device_get_softc(scn->nvd_dev);
++	struct pmem_label *ll = sc->label;
++	struct pmem_label *rl = sc->rlabel;
++	uint32_t state;
++	int b, dir;
++
++	if (rl == NULL || rl->sign != NTBN_SIGN_LONG) {
++		device_printf(dev, "Can't see label on other side.\n");
++		return;
++	}
++
++	dir = 0;
++	if (rl->empty && !ll->empty) {
++		device_printf(dev, "Other side is empty.\n");
++		dir = 1;
++	} else if (ll->empty && !rl->empty) {
++		device_printf(dev, "Our side is empty.\n");
++		dir = -1;
++	} else if (rl->array != ll->array) {
++		if (ll->empty && rl->empty)
++			device_printf(dev, "Both sides are empty.\n");
++		else
++			device_printf(dev, "Two different arrays!\n");
++		if (ll->array > rl->array)
++			dir = 1;	/* Forcefully sync l->r. */
++		else
++			dir = -1;	/* Forcefully sync r->l. */
++	} else if (!ll->dirty && !rl->dirty) {
++		device_printf(dev, "Both sides are clean.\n");
++	} else if (ll->opened && rl->opened) {
++		device_printf(dev, "Both sides are opened!\n");
++	} else if (ll->opened) {
++		device_printf(dev, "Local side is opened.\n");
++		dir = 1;
++	} else if (rl->opened) {
++		device_printf(dev, "Remote side is opened.\n");
++		dir = -1;
++	} else if (ll->dirty) {
++		device_printf(dev, "Local side is dirty.\n");
++		dir = 1;
++	} else if (rl->dirty) {
++		device_printf(dev, "Remote side is dirty.\n");
++		dir = -1;
++	}
++
++	atomic_store_rel_32(&ll->state, STATE_WAITING);
++	while (((state = atomic_load_acq_32(&rl->state)) == STATE_NONE ||
++	    state == STATE_IDLE) && sc->rlabel != NULL)
++		cpu_spinwait();
++
++	if (dir > 0) {
++		device_printf(dev, "Copying local to remote.\n");
++		b = ticks;
++		ntb_copy1(sc->rvaddr, sc->vaddr, sc->size - PAGE_SIZE);
++		device_printf(dev, "Copied %juMB at %juMB/s\n",
++		    sc->size / 1024 / 1024,
++		    sc->size * hz / 1024 / 1024 / imax(ticks - b, 1));
++		rl->array = ll->array;
++		rl->empty = 0;
++		rl->dirty = 0;
++		ll->empty = 0;
++		ll->dirty = 0;
++		atomic_store_rel_32(&ll->state, STATE_READY);
++		atomic_store_rel_32(&rl->state, STATE_READY);
++	} else if (dir < 0) {
++		device_printf(dev, "Waiting for remote to local copy.\n");
++		while (atomic_load_acq_32(&rl->state) == STATE_WAITING &&
++		    sc->rlabel != NULL)
++			cpu_spinwait();
++		snprintf(sc->disk->d_ident, sizeof(sc->disk->d_ident),
++		    "%016jX", (uintmax_t)ll->array);
++		disk_media_changed(sc->disk, M_NOWAIT);
++	} else {
++		device_printf(dev, "No need to copy.\n");
++		atomic_store_rel_32(&ll->state, STATE_READY);
++	}
++	device_printf(dev, "Sync is done.\n");
++}
++
++static void
++ntb_pmem_link_work(void *data, int pending)
++{
++	device_t dev = data;
++	struct ntb_pmem *sc = device_get_softc(dev);
++	struct pmem_disk *scd = device_get_softc(sc->nvd_dev);
++	vm_paddr_t off;
++	uint32_t val;
++
++	off = scd->paddr - sc->ntb_xpaddr;
++	ntb_peer_spad_write(dev, NTBN_OFF_LOW, off & 0xffffffff);
++	ntb_peer_spad_write(dev, NTBN_OFF_HIGH, off >> 32);
++	ntb_peer_spad_write(dev, NTBN_SIZE_HIGH, scd->size >> 32);
++	ntb_peer_spad_write(dev, NTBN_SIGN, NTBN_SIGN_SHORT);
++
++	ntb_spad_read(dev, NTBN_SIGN, &val);
++	if (val != NTBN_SIGN_SHORT)
++		goto out;
++
++	ntb_spad_read(dev, NTBN_SIZE_HIGH, &val);
++	if (val != (scd->size >> 32)) {
++		device_printf(dev, "PMEM sizes don't match (%u != %u)\n",
++		    val << 2, (uint32_t)(scd->size >> 30));
++		return;
++	}
++
++	ntb_spad_read(dev, NTBN_OFF_HIGH, &val);
++	off = (vm_paddr_t)val << 32;
++	ntb_spad_read(dev, NTBN_OFF_LOW, &val);
++	off |= val;
++
++	callout_stop(&sc->ntb_start);
++	device_printf(dev, "Connection established\n");
++	scd->rpaddr = sc->ntb_paddr + off;
++	scd->rvaddr = sc->ntb_caddr + off;
++	scd->rlabel = (struct pmem_label *)(scd->rvaddr + scd->size -
++	    PAGE_SIZE);
++	ntb_pmem_sync(dev);
++	ntb_pmem_start(dev);
++	return;
++out:
++	if (ntb_link_is_up(dev, NULL, NULL)) {
++		taskqueue_enqueue_timeout_sbt(sc->ntb_link_tq,
++		    &sc->ntb_link_task, SBT_1S / 10, 0, C_PREL(1));
++	}
++}
++
++static void
++ntb_pmem_link_event(void *data)
++{
++	device_t dev = data;
++	struct ntb_pmem *sc = device_get_softc(dev);
++	struct pmem_disk *scd = device_get_softc(sc->nvd_dev);
++
++	if (ntb_link_is_up(dev, NULL, NULL)) {
++		taskqueue_enqueue_timeout_sbt(sc->ntb_link_tq,
++		    &sc->ntb_link_task, 0, 0, 0);
++	} else {
++		device_printf(dev, "Connection is down\n");
++		taskqueue_cancel_timeout(sc->ntb_link_tq,
++		    &sc->ntb_link_task, NULL);
++
++		/*
++		 * The scratchpad registers keep the values if the remote side
++		 * goes down, blast them now to give them a sane value the next
++		 * time they are accessed.
++		 */
++		ntb_spad_clear(dev);
++
++		scd->rpaddr = 0;
++		scd->rvaddr = NULL;
++		scd->rlabel = NULL;
++		scd->label->state = MIN(scd->label->state, STATE_IDLE);
++	}
++}
++
++static const struct ntb_ctx_ops ntb_pmem_ops = {
++	.link_event = ntb_pmem_link_event,
++	.db_event = NULL,
++};
++
++static int
++ntb_pmem_probe(device_t dev)
++{
++
++	device_set_desc(dev, "NTB PMEM syncer");
++
++	/*
++	 * Use lower priority if we can't find pmemX device with equal
++	 * unit number.  User may not want us, just not specified exactly.
++	 */
++	if (devclass_get_device(pmem_devclass, device_get_unit(dev)) == NULL)
++		return (BUS_PROBE_LOW_PRIORITY);
++	return (BUS_PROBE_DEFAULT);
++}
++
++static int
++ntb_pmem_attach(device_t dev)
++{
++	struct ntb_pmem *sc = device_get_softc(dev);
++	struct pmem_disk *scd;
++	int error;
++
++	/* Find pmemX device with equal unit number. */
++	sc->nvd_dev = devclass_get_device(pmem_devclass, device_get_unit(dev));
++	if (sc->nvd_dev == NULL) {
++		device_printf(dev, "Can not find pmem%u device\n",
++		    device_get_unit(dev));
++		return (ENXIO);
++	}
++	scd = device_get_softc(sc->nvd_dev);
++
++	/* Make sure we have enough NTB resources. */
++	if (ntb_mw_count(dev) < 1) {
++		device_printf(dev, "At least 1 memory window required.\n");
++		return (ENXIO);
++	}
++	if (ntb_spad_count(dev) < 4) {
++		device_printf(dev, "At least 4 scratchpads required.\n");
++		return (ENXIO);
++	}
++	error = ntb_mw_get_range(dev, 0, &sc->ntb_paddr, &sc->ntb_caddr,
++	    &sc->ntb_size, &sc->ntb_xalign, NULL, NULL);
++	if (error != 0) {
++		device_printf(dev, "ntb_mw_get_range() error %d\n", error);
++		return (ENXIO);
++	}
++	sc->ntb_xpaddr = scd->paddr & ~(sc->ntb_xalign - 1);
++	sc->ntb_xsize = scd->paddr - sc->ntb_xpaddr + scd->size;
++	if (sc->ntb_size < sc->ntb_xsize) {
++		device_printf(dev, "Memory window is too small (%ju < %ju).\n",
++		    sc->ntb_size, sc->ntb_xsize);
++		return (ENXIO);
++	} else if (sc->ntb_size < 2 * scd->size) {
++		device_printf(dev, "Memory window may be too small (%ju < %ju).\n",
++		    sc->ntb_size, 2 * scd->size);
++	}
++
++	/* Get NUMA domain of the NTB for pmem driver. */
++	bus_get_domain(dev, &scd->rdomain);
++
++	/* Prepare taskqueue to handle link events (sync). */
++	sc->ntb_link_tq = taskqueue_create(device_get_nameunit(dev), M_WAITOK,
++	    taskqueue_thread_enqueue, &sc->ntb_link_tq);
++	(void) taskqueue_start_threads_cpuset(&sc->ntb_link_tq, 1, PUSER,
++	    &cpuset_domain[scd->rdomain], "%s", device_get_nameunit(dev));
++	TIMEOUT_TASK_INIT(sc->ntb_link_tq, &sc->ntb_link_task, 0,
++	    ntb_pmem_link_work, dev);
++	callout_init(&sc->ntb_start, 1);
++
++	/* Allow write combining for the memory window. */
++	error = ntb_mw_set_wc(dev, 0, VM_MEMATTR_WRITE_COMBINING);
++	if (error != 0)
++		device_printf(dev, "ntb_mw_set_wc() error %d\n", error);
++
++	/* Setup address translation. */
++	error = ntb_mw_set_trans(dev, 0, sc->ntb_xpaddr, sc->ntb_xsize);
++	if (error != 0) {
++		device_printf(dev, "ntb_mw_set_trans() error %d\n", error);
++		return (ENXIO);
++	}
++
++	/* Delay boot if this PMEM ever saw NTB. */
++	if (scd->label->state >= STATE_IDLE) {
++		device_printf(dev, "PMEM saw NTB, delaying root mount.\n");
++		sc->ntb_rootmount = root_mount_hold("ntb_pmem");
++		callout_reset(&sc->ntb_start, ntb_pmem_start_timeout * hz,
++		    ntb_pmem_start, dev);
++	} else
++		sc->ntb_rootmount = NULL;
++
++	/* Bring up the link. */
++	error = ntb_set_ctx(dev, dev, &ntb_pmem_ops);
++	if (error != 0)
++		device_printf(dev, "ntb_set_ctx() error %d\n", error);
++	error = ntb_link_enable(dev, NTB_SPEED_AUTO, NTB_WIDTH_AUTO);
++	if (error != 0)
++		device_printf(dev, "ntb_link_enable() error %d\n", error);
++
++	return (0);
++}
++
++static int
++ntb_pmem_detach(device_t dev)
++{
++	struct ntb_pmem *sc = device_get_softc(dev);
++	struct pmem_disk *scd = device_get_softc(sc->nvd_dev);
++	int error;
++
++	callout_drain(&sc->ntb_start);
++	root_mount_rel(sc->ntb_rootmount);
++	sc->ntb_rootmount = NULL;
++
++	scd->rpaddr = 0;
++	scd->rvaddr = NULL;
++	scd->rlabel = NULL;
++	error = ntb_link_disable(dev);
++	if (error != 0)
++		device_printf(dev, "ntb_link_disable() error %d\n", error);
++	ntb_clear_ctx(dev);
++	error = ntb_mw_clear_trans(dev, 0);
++	if (error != 0)
++		device_printf(dev, "ntb_mw_clear_trans() error %d\n", error);
++	taskqueue_drain_timeout(sc->ntb_link_tq, &sc->ntb_link_task);
++	taskqueue_free(sc->ntb_link_tq);
++	return (0);
++}
++
++static device_method_t ntb_pmem_methods[] = {
++	/* Device interface */
++	DEVMETHOD(device_probe,		ntb_pmem_probe),
++	DEVMETHOD(device_attach,	ntb_pmem_attach),
++	DEVMETHOD(device_detach,	ntb_pmem_detach),
++	{ 0, 0 }
++};
++
++static driver_t ntb_pmem_driver = {
++	"ntb_pmem",
++	ntb_pmem_methods,
++	sizeof(struct ntb_pmem),
++};
++
++static devclass_t ntb_pmem_devclass;
++
++DRIVER_MODULE(ntb_pmem, ntb_hw, ntb_pmem_driver, ntb_pmem_devclass, 0, 0);
++MODULE_DEPEND(ntb_pmem, ntb, 1, 1, 1);
++MODULE_VERSION(ntb_pmem, 1);
+diff --git a/sys/dev/ixnvdimm/ixnvdimm.h b/sys/dev/ixnvdimm/ixnvdimm.h
+new file mode 100644
+index 000000000000..692d06c4bc40
+--- /dev/null
++++ b/sys/dev/ixnvdimm/ixnvdimm.h
+@@ -0,0 +1,55 @@
++/*-
++ * Copyright (c) 2020 Alexander Motin <mav@FreeBSD.org>
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
++ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
++ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGE.
++ */
++
++#ifndef __IXNVDIMM_H__
++#define __IXNVDIMM_H__
++
++#include <sys/uuid.h>
++
++struct ixnvdimm_info {
++	uint16_t	VendorId;
++	uint16_t	DeviceId;
++	uint16_t	RevisionId;
++	uint16_t	SubsystemVendorId;
++	uint16_t	SubsystemDeviceId;
++	uint16_t	SubsystemRevisionId;
++	uint32_t	SerialNumber;
++};
++
++#define	IXNVDIMM_INFO		_IOR('i', 0x00, struct ixnvdimm_info)
++
++struct ixnvdimm_dsm {
++	struct uuid	guid;
++	int		rev;
++	int		func;
++	size_t		in_size;
++	size_t		out_size;
++	void		*in_buf;
++	void		*out_buf;
++};
++
++#define	IXNVDIMM_DSM		_IOWR('i', 0x01, struct ixnvdimm_dsm)
++
++#endif /* __IXNVDIMM_H__ */
+diff --git a/sys/dev/ixnvdimm/ixnvdimm_copy.S b/sys/dev/ixnvdimm/ixnvdimm_copy.S
+new file mode 100644
+index 000000000000..de1748ebd802
+--- /dev/null
++++ b/sys/dev/ixnvdimm/ixnvdimm_copy.S
+@@ -0,0 +1,130 @@
++/*-
++ * Copyright (c) 2016-2017 Alexander Motin <mav@FreeBSD.org>
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ * 4. Neither the name of the University nor the names of its contributors
++ *    may be used to endorse or promote products derived from this software
++ *    without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
++ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
++ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGE.
++ *
++ * $FreeBSD$
++ */
++
++#include "opt_ddb.h"
++
++#include <machine/asmacros.h>
++
++#include "assym.inc"
++
++	.text
++
++/*
++ * ntb_copy1(%rdi=to, %rsi=from, %rdx=len)
++ */
++ENTRY(ntb_copy1)
++	PUSH_FRAME_POINTER
++	addq	%rdx,%rsi
++	addq	%rdx,%rdi
++	negq	%rdx
++1:
++	testq	$7,%rdx			/* Copy by byte (unlikely) */
++	jz	2f
++	movb	(%rsi,%rdx),%al
++	movb	%al,(%rdi,%rdx)		/* XXX: Should be non-temporal */
++	addq	$1,%rdx
++	jmp	1b
++2:
++	testq	$31,%rdx		/* Copy by qword (less likely) */
++	jz	3f
++	movq	(%rsi,%rdx),%rax
++	movnti	%rax,(%rdi,%rdx)
++	addq	$8,%rdx
++	jmp	2b
++3:
++	testq	%rdx, %rdx
++	jz	5f
++4:
++	movq	(%rsi,%rdx),%rax	/* Copy by 4 qwords */
++	movnti	%rax,(%rdi,%rdx)
++	movq	8(%rsi,%rdx),%rax
++	movnti	%rax,8(%rdi,%rdx)
++	movq	16(%rsi,%rdx),%rax
++	movnti	%rax,16(%rdi,%rdx)
++	movq	24(%rsi,%rdx),%rax
++	movnti	%rax,24(%rdi,%rdx)
++	addq	$32,%rdx
++	js	4b
++5:
++	sfence
++	POP_FRAME_POINTER
++	ret
++END(ntb_copy1)
++
++/*
++ * ntb_copy2(%rdi=to1, %rsi=to2, %rdx=from, %rcx=len)
++ */
++ENTRY(ntb_copy2)
++	PUSH_FRAME_POINTER
++	addq	%rcx,%rsi
++	addq	%rcx,%rdi
++	addq	%rcx,%rdx
++	negq	%rcx
++1:
++	testq	$7,%rcx			/* Copy by byte (unlikely) */
++	jz	2f
++	movb	(%rdx,%rcx),%al
++	movb	%al,(%rdi,%rcx)		/* XXX: Should be non-temporal */
++	movb	%al,(%rsi,%rcx)		/* XXX: Should be non-temporal */
++	addq	$1,%rcx
++	jmp	1b
++2:
++	testq	$31,%rcx		/* Copy by qword (less likely) */
++	jz	3f
++	movq	(%rdx,%rcx),%rax
++	movnti	%rax,(%rdi,%rcx)
++	movnti	%rax,(%rsi,%rcx)
++	addq	$8,%rcx
++	jmp	2b
++3:
++	testq	%rcx, %rcx
++	jz	5f
++4:
++	movq	(%rdx,%rcx),%rax	/* Copy by 4 qwords */
++	movnti	%rax,(%rdi,%rcx)
++	movnti	%rax,(%rsi,%rcx)
++	movq	8(%rdx,%rcx),%rax
++	movnti	%rax,8(%rdi,%rcx)
++	movnti	%rax,8(%rsi,%rcx)
++	movq	16(%rdx,%rcx),%rax
++	movnti	%rax,16(%rdi,%rcx)
++	movnti	%rax,16(%rsi,%rcx)
++	movq	24(%rdx,%rcx),%rax
++	movnti	%rax,24(%rdi,%rcx)
++	movnti	%rax,24(%rsi,%rcx)
++	addq	$32,%rcx
++	js	4b
++5:
++	sfence
++	POP_FRAME_POINTER
++	ret
++END(ntb_copy2)
++
+diff --git a/sys/modules/Makefile b/sys/modules/Makefile
+index abb2668f4ae2..4a333f8a7fe0 100644
+--- a/sys/modules/Makefile
++++ b/sys/modules/Makefile
+@@ -207,6 +207,7 @@ SUBDIR=	\
+ 	${_ix} \
+ 	${_ixv} \
+ 	${_ixl} \
++	${_ixnvdimm} \
+ 	jme \
+ 	kbdmux \
+ 	kgssapi \
+@@ -860,6 +861,7 @@ _iavf=		iavf
+ _ioat=		ioat
+ _iwx=		iwx
+ _ixl=		ixl
++_ixnvdimm=	ixnvdimm
+ _nvdimm=	nvdimm
+ _pms=		pms
+ _pt=		pt
+diff --git a/sys/modules/ixnvdimm/Makefile b/sys/modules/ixnvdimm/Makefile
+new file mode 100644
+index 000000000000..3cd92f549673
+--- /dev/null
++++ b/sys/modules/ixnvdimm/Makefile
+@@ -0,0 +1,20 @@
++# ixnvdimm Loadable Kernel Module
++#
++# $FreeBSD$
++
++.PATH:  ${.CURDIR}/../../dev/ixnvdimm
++
++KMOD=	ixnvdimm
++SRCS=	ixnvdimm.c ixnvdimm_copy.S
++SRCS+=	opt_acpi.h acpi_if.h device_if.h bus_if.h ntb_if.h opt_ddb.h
++
++# XXX: for assym.inc
++SRCS+=  opt_kstack_pages.h opt_nfs.h opt_hwpmc_hooks.h opt_compat.h
++
++DPSRCS+=	assym.inc
++
++CFLAGS += -I${.CURDIR}/../../dev/ntb
++
++MFILES=	kern/bus_if.m kern/device_if.m dev/ntb/ntb_if.m
++
++.include <bsd.kmod.mk>
+diff --git a/usr.sbin/Makefile b/usr.sbin/Makefile
+index 3d3a8443a7cf..4af4b2363740 100644
+--- a/usr.sbin/Makefile
++++ b/usr.sbin/Makefile
+@@ -36,6 +36,7 @@ SUBDIR=	adduser \
+ 	ifmcstat \
+ 	iostat \
+ 	iovctl \
++	ixnvdimm \
+ 	kldxref \
+ 	mailwrapper \
+ 	makefs \
+diff --git a/usr.sbin/ixnvdimm/Makefile b/usr.sbin/ixnvdimm/Makefile
+new file mode 100644
+index 000000000000..b5ceadf5ea39
+--- /dev/null
++++ b/usr.sbin/ixnvdimm/Makefile
+@@ -0,0 +1,7 @@
++# $FreeBSD$
++
++PROG=	ixnvdimm
++SRCS=	ixnvdimm.c
++MAN=
++
++.include <bsd.prog.mk>
+diff --git a/usr.sbin/ixnvdimm/ixnvdimm.c b/usr.sbin/ixnvdimm/ixnvdimm.c
+new file mode 100644
+index 000000000000..fbff632cbba8
+--- /dev/null
++++ b/usr.sbin/ixnvdimm/ixnvdimm.c
+@@ -0,0 +1,1161 @@
++/*-
++ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
++ *
++ * Copyright (c) 2020-2023 Alexander Motin <mav@FreeBSD.org>
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
++ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
++ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGE.
++ */
++
++#include <sys/param.h>
++#include <assert.h>
++#include <err.h>
++#include <fcntl.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sysexits.h>
++#include <unistd.h>
++#include <sys/ioctl.h>
++#include <sys/stat.h>
++#ifdef __linux__
++#include <linux/ndctl.h>
++#else
++#include <uuid.h>
++#include <sys/endian.h>
++#include <dev/ixnvdimm/ixnvdimm.h>
++#endif
++
++/* Page 0 */
++#define	NVDIMM_MGT_CMD0		0x40
++#define	NVDIMM_MGT_CMD1		0x41
++#define	FIRMWARE_OPS_CMD	0x4a
++#define	NVDIMM_CMD_STATUS0	0x61
++#define	NVDIMM_CMD_STATUS1	0x62
++#define	FIRMWARE_OPS_STATUS	0x71
++
++/* Page 3 */
++#define	TYPED_BLOCK_DATA	0x04
++#define	FW_REGION_CRC0		0x40
++#define	FW_REGION_CRC1		0x41
++#define	FW_SLOT_INFO		0x42
++
++#define	BLOCK_SIZE		32
++
++#ifdef __linux__
++typedef	u_int8_t	uint8_t;
++typedef	u_int16_t	uint16_t;
++typedef	u_int32_t	uint32_t;
++typedef	u_int64_t	uint64_t;
++
++static __inline uint16_t
++be16dec(const void *pp)
++{
++        uint8_t const *p = (uint8_t const *)pp;
++
++        return ((p[0] << 8) | p[1]);
++}
++
++static __inline uint32_t
++be32dec(const void *pp)
++{
++        uint8_t const *p = (uint8_t const *)pp;
++
++        return (((unsigned)p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]);
++}
++
++static __inline uint16_t
++le16dec(const void *pp)
++{
++        uint8_t const *p = (uint8_t const *)pp;
++
++        return ((p[1] << 8) | p[0]);
++}
++
++static __inline uint32_t
++le32dec(const void *pp)
++{
++        uint8_t const *p = (uint8_t const *)pp;
++
++        return (((unsigned)p[3] << 24) | (p[2] << 16) | (p[1] << 8) | p[0]);
++}
++
++static __inline void
++le16enc(void *pp, uint16_t u)
++{
++        uint8_t *p = (uint8_t *)pp;
++
++        p[0] = u & 0xff;
++        p[1] = (u >> 8) & 0xff;
++}
++
++static __inline void
++le32enc(void *pp, uint32_t u)
++{
++        uint8_t *p = (uint8_t *)pp;
++
++        p[0] = u & 0xff;
++        p[1] = (u >> 8) & 0xff;
++        p[2] = (u >> 16) & 0xff;
++        p[3] = (u >> 24) & 0xff;
++}
++
++struct ixnvdimm_info {
++        uint16_t        VendorId;
++        uint16_t        DeviceId;
++        uint16_t        RevisionId;
++        uint16_t        SubsystemVendorId;
++        uint16_t        SubsystemDeviceId;
++        uint16_t        SubsystemRevisionId;
++        uint32_t        SerialNumber;
++};
++
++const char *nmem;
++
++static void
++init(const char *devname)
++{
++
++	if ((nmem = strrchr(devname, '/')) != NULL)
++		nmem++;
++	else
++		nmem = devname;
++}
++
++static uint32_t
++readsysfs(const char *attr)
++{
++	char path[256];
++	char buf[16];
++	int fd, n;
++
++	snprintf(path, sizeof(path), "/sys/bus/nd/devices/%s/nfit/%s",
++	    nmem, attr);
++	fd = open(path, O_RDONLY|O_CLOEXEC);
++	if (fd < 0)
++		err(EX_NOINPUT, "Can't open %s", path);
++	n = read(fd, buf, sizeof(buf));
++	close(fd);
++	if (n < 0 || n >= sizeof(buf))
++		err(EX_NOINPUT, "failed to read %s\n", path);
++	buf[n] = 0;
++	if (n && buf[n - 1] == '\n')
++		buf[n - 1] = 0;
++        return (strtoul(buf, NULL, 0));
++}
++
++static int
++getinfo(int fd, struct ixnvdimm_info *info)
++{
++	uint16_t t16;
++
++	/*
++	 * Linux converts all the values from big-endian.
++	 * I am not sure what is right, just stay consistent.
++	 */
++	t16 = readsysfs("vendor");
++	info->VendorId = be16dec(&t16);
++	t16 = readsysfs("device");
++	info->DeviceId = be16dec(&t16);
++	t16 = readsysfs("rev_id");
++	info->RevisionId = be16dec(&t16);
++	t16 = readsysfs("subsystem_vendor");
++	info->SubsystemVendorId = be16dec(&t16);
++	t16 = readsysfs("subsystem_device");
++	info->SubsystemDeviceId = be16dec(&t16);
++	t16 = readsysfs("subsystem_rev_id");
++	info->SubsystemRevisionId = be16dec(&t16);
++	info->SerialNumber = readsysfs("serial");
++	return (0);
++}
++
++static ssize_t
++calldsm(int fd, int func, void *in_buf, size_t in_size, void *out_buf,
++    size_t out_size)
++{
++	struct nd_cmd_pkg *pkg;
++	uint32_t fw_size;
++
++	pkg = calloc(1, sizeof(*pkg) + in_size + out_size);
++	pkg->nd_family = NVDIMM_FAMILY_MSFT;
++	pkg->nd_command = func;
++	pkg->nd_size_in = in_size;
++	pkg->nd_size_out = out_size;
++	pkg->nd_fw_size = 0;
++	if (in_size)
++		memcpy(&pkg->nd_payload[0], in_buf, in_size);
++	if (ioctl(fd, ND_IOCTL_CALL, pkg) != 0)
++		return (-1);
++	fw_size = pkg->nd_fw_size;
++	if (out_size)
++		memcpy(out_buf, &pkg->nd_payload[in_size], out_size);
++	free(pkg);
++	return (fw_size);
++}
++
++#else
++
++#define MGUID "1EE68B36-D4BD-4a1a-9A16-4F8E53D46E05"
++static struct uuid mguid;
++
++static void
++init(const char *devname __unused)
++{
++	uint32_t status;
++
++	uuid_from_string(MGUID, &mguid, &status);
++	assert(status == uuid_s_ok);
++}
++
++static int
++getinfo(int fd, struct ixnvdimm_info *info)
++{
++
++	return (ioctl(fd, IXNVDIMM_INFO, info));
++}
++
++static ssize_t
++calldsm(int fd, int func, void *in_buf, size_t in_size, void *out_buf,
++    size_t out_size)
++{
++	struct ixnvdimm_dsm dsm;
++
++	bzero(&dsm, sizeof(dsm));
++	dsm.guid = mguid;
++	dsm.rev = 1;
++	dsm.func = func;
++	dsm.in_size = in_size;
++	dsm.out_size = out_size;
++	dsm.in_buf = in_buf;
++	dsm.out_buf = out_buf;
++	if (ioctl(fd, IXNVDIMM_DSM, &dsm) != 0)
++		return (-1);
++	return (dsm.out_size);
++}
++#endif
++
++static int
++Crc16(char *ptr, int count)
++{
++	int crc, i;
++
++	crc = 0;
++	while (--count >= 0) {
++		crc = crc ^ (int)*ptr++ << 8;
++		for (i = 0; i < 8; ++i) {
++			if (crc & 0x8000) {
++				crc = crc << 1 ^ 0x1021;
++			} else {
++				crc = crc << 1;
++			}
++		}
++	}
++	return (crc & 0xFFFF);
++}
++
++static uint8_t
++i2c_read(int fd, uint8_t page, uint8_t off)
++{
++	uint8_t in_buf[2], out_buf[5];
++	uint32_t status;
++
++	in_buf[0] = page;
++	in_buf[1] = off;
++	if (calldsm(fd, 27, in_buf, sizeof(in_buf), out_buf, sizeof(out_buf)) < 5)
++		err(EX_IOERR, "Can't read i2c (%0x, %0x)", page, off);
++	status = le32dec(&out_buf[0]);
++	if (status != 0)
++		errx(EX_IOERR, "i2c read error (%0x, %0x): %x", page, off, status);
++	return (out_buf[4]);
++}
++
++static void
++i2c_write(int fd, uint8_t page, uint8_t off, uint8_t val)
++{
++	uint8_t in_buf[3], out_buf[4];
++	uint32_t status;
++
++	in_buf[0] = page;
++	in_buf[1] = off;
++	in_buf[2] = val;
++	if (calldsm(fd, 28, in_buf, sizeof(in_buf), out_buf, sizeof(out_buf)) < 4)
++		err(EX_IOERR, "Can't write i2c (%0x, %0x)", page, off);
++	status = le32dec(&out_buf[0]);
++	if (status != 0)
++		errx(EX_IOERR, "i2c write error (%0x, %0x): %x", page, off, status);
++}
++
++static uint16_t
++i2c_read16(int fd, uint8_t page, uint8_t off)
++{
++
++	return (i2c_read(fd, page, off) |
++	    ((uint16_t)i2c_read(fd, page, off + 1) << 8));
++}
++
++static void
++i2c_write16(int fd, uint8_t page, uint8_t off, uint16_t val)
++{
++
++	i2c_write(fd, page, off, val);
++	i2c_write(fd, page, off + 1, val >> 8);
++}
++
++static void
++factory_default(int fd)
++{
++	uint8_t status[4];
++
++	/* Factory default via DSM. */
++	i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++	memset(&status, 0xff, sizeof(status));
++	if (calldsm(fd, 21, NULL, 0, status, sizeof(status)) != 4)
++		err(EX_NOINPUT, "Can't call Reset to Factory Defaults DSM");
++	if (le32dec(&status[0]) != 0)
++		errx(EX_NOINPUT, "Reset to Factory Defaults DSM failed: %x",
++		    le32dec(&status[0]));
++	printf("Reset to Factory Defaults succeeded\n");
++	fflush(stdout);
++}
++
++static void
++firmware_update(int fd, struct ixnvdimm_info *info, const char *f, int I)
++{
++	int b, ffd, r, rbs, regions, t, timeout, atimeout, try;
++	struct stat sb;
++	off_t size;
++	uint8_t *image, status[4], buf[7 + BLOCK_SIZE];
++
++	/* Firmware commands timeout in milliseconds. */
++	timeout = i2c_read16(fd, 0x00, 0x22);
++	if (timeout & 0x8000)
++		timeout = (timeout & 0x7fff) * 1000;
++
++	/* Abort commands timeout in milliseconds. */
++	atimeout = i2c_read(fd, 0x00, 0x24);
++	if (i2c_read(fd, 0x00, 0x11) & 0x02)
++		atimeout = atimeout * 1000;
++
++	/* Region size in blocks. */
++	rbs = i2c_read(fd, 0x00, 0x32);
++
++	if ((ffd = open(f, O_RDONLY)) < 0)
++		err(EX_NOINPUT, "Can't open firmware file '%s'", f);
++	if (fstat(ffd, &sb) < 0)
++		err(EX_NOINPUT, "Can't stat firmware file '%s'", f);
++	size = roundup(sb.st_size, rbs * BLOCK_SIZE);
++	regions = size / (rbs * BLOCK_SIZE);
++	if (size < BLOCK_SIZE)
++		errx(EX_NOINPUT, "Firmware file '%s' is too small", f);
++	image = calloc(1, size);
++	if (image == NULL)
++		err(EX_OSERR, "Can't allocate firmware memory");
++	if (read(ffd, image, sb.st_size) != sb.st_size)
++		err(EX_OSERR, "Can't read firmware file '%s'", f);
++	close(ffd);
++
++	/* Validate firmware image header. */
++	if (I)
++		t = 0;		/* Ignore any identifiers difference. */
++	else if (image[31] == 0)
++		t = 0x03;
++	else if (image[31] == 1)
++		t = image[19];
++	else
++		errx(EX_NOINPUT, "Unknown Firmware Image Header Format %u", image[31]);
++	if ((t & 0x01) && le16dec(&image[0]) != info->VendorId)
++		errx(EX_NOINPUT, "Module Manufacturer ID Code does not match");
++	if ((t & 0x02) && le16dec(&image[2]) != info->DeviceId)
++		errx(EX_NOINPUT, "Module Product Identifier does not match");
++	if ((t & 0x04) && le16dec(&image[4]) != info->SubsystemVendorId)
++		errx(EX_NOINPUT, "Non-Volatile Memory Subsystem Controller Module Manufacturer ID Code does not match");
++	if ((t & 0x08) && le16dec(&image[6]) != info->SubsystemDeviceId)
++		errx(EX_NOINPUT, "Non-Volatile Memory Subsystem Controller Module Product Identifier does not match");
++	if ((t & 0x10) && image[8] != info->RevisionId)
++		errx(EX_NOINPUT, "Module Revision Code does not match");
++	if ((t & 0x20) && image[9] != info->SubsystemRevisionId)
++		errx(EX_NOINPUT, "Non-Volatile Memory Subsystem Controller Revision Code does not match");
++	if (be32dec(&image[20]) != sb.st_size)
++		errx(EX_NOINPUT, "Size in firmware header does not match");
++	if (be16dec(&image[24]) !=
++	    Crc16((char *)image + BLOCK_SIZE, sb.st_size - BLOCK_SIZE))
++		errx(EX_NOINPUT, "Checksum in firmware header does not match");
++
++	/* Wait for the Operation In Progress bit in the NVDIMM_CMD_STATUS0 register to be clear. */
++	if (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) {
++		printf("Waiting for Operation In Progress to clear\n");
++		for (t = 0; (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) && t < timeout; t++)
++			usleep(1000);
++		if (t >= timeout) {
++			errx(EX_PROTOCOL, "NVDIMM has operation in progress: %02x",
++			    i2c_read16(fd, 0, NVDIMM_CMD_STATUS0));
++		}
++	}
++
++	/* Start firmware update via DSM. */
++	i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++	buf[0] = 1;	/* Firmware Slot */
++	memset(&status, 0xff, sizeof(status));
++	if (calldsm(fd, 22, buf, 1, status, sizeof(status)) != 4)
++		err(EX_NOINPUT, "Can't call Start Firmware Update DSM");
++	if (le32dec(&status[0]) != 0)
++		errx(EX_NOINPUT, "Start Firmware Update DSM failed: %x",
++		    le32dec(&status[0]));
++	printf("Start Firmware Update succeeded\n");
++	fflush(stdout);
++
++	/*
++	 * Wait for the Operation In Progress bit in the NVDIMM_CMD_STATUS0
++	 * register to be clear.  I have no clue why ACPI DSM does not do it.
++	 */
++	for (t = 0; (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) && t < timeout; t++)
++		usleep(1000);
++	if (t >= timeout) {
++		warnx("Start Firmware Update DSM timeout: %04x",
++		    i2c_read16(fd, 0, NVDIMM_CMD_STATUS0));
++		goto timeout;
++	}
++
++	/* Check ACPI enabled firmware update mode. */
++	if ((i2c_read(fd, 0, FIRMWARE_OPS_STATUS) & 0x04) == 0) {
++		warnx("Firmware update mode is not enabled: %02x",
++		    i2c_read(fd, 0, FIRMWARE_OPS_STATUS));
++		goto error;
++	}
++
++	/* Clear firmware region. */
++	i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++	i2c_write(fd, 0, FIRMWARE_OPS_CMD, 0x02);
++	for (t = 0; (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) && t < timeout; t++)
++		usleep(1000);
++	if (t >= timeout) {
++		warnx("Clear Firmware timeout: %04x",
++		    i2c_read16(fd, 0, NVDIMM_CMD_STATUS0));
++		goto timeout;
++	}
++	if (i2c_read(fd, 0, FIRMWARE_OPS_STATUS) & 0x02) {
++		warnx("Clear Firmware failed: %02x",
++		    i2c_read(fd, 0, FIRMWARE_OPS_STATUS));
++		goto error2;
++	}
++
++	/* Send firmware one region at a time */
++	i2c_write(fd, 3, TYPED_BLOCK_DATA, 0x01);
++	for (r = 0; r < regions; r++) {
++		printf("\r%d/%d ", r, regions);
++		fflush(stdout);
++		try = 0;
++
++retry:
++		/* Send region blocks via Send Firmware Update Data DSM. */
++		for (b = 0; b < rbs; b++) {
++			le32enc(&buf[0], BLOCK_SIZE);
++			le16enc(&buf[4], r);
++			buf[6] = b;
++			memcpy(&buf[7], &image[(r * rbs + b) * BLOCK_SIZE], BLOCK_SIZE);
++			memset(&status, 0xff, sizeof(status));
++			if (calldsm(fd, 23, buf, sizeof(buf), status, sizeof(status)) != 4) {
++				warn("Can't call Send Firmware Update Data DSM");
++				goto error2;
++			}
++			if (le32dec(&status[0]) != 0) {
++				warnx("Send Firmware Update Data DSM failed: %x",
++				    le32dec(&status[0]));
++				goto error2;
++			}
++		}
++
++		/* Verify region checksum. */
++		i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++		i2c_write(fd, 0, FIRMWARE_OPS_CMD, 0x04);
++		for (t = 0; (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) && t < timeout; t++)
++			usleep(1000);
++		if (t >= timeout) {
++			warnx("Generate Firmware Checksum timeout: %04x",
++			    i2c_read16(fd, 0, NVDIMM_CMD_STATUS0));
++			goto timeout;
++		}
++		if (i2c_read(fd, 0, FIRMWARE_OPS_STATUS) & 0x02) {
++			warnx("Generate Firmware Checksum failed: %02x",
++			    i2c_read(fd, 0, FIRMWARE_OPS_STATUS));
++			goto error2;
++		}
++		if (i2c_read16(fd, 3, FW_REGION_CRC0) !=
++		    Crc16((char *)image + r * rbs * BLOCK_SIZE, rbs * BLOCK_SIZE)) {
++			if (++try < 3) {
++				printf("Region checksum mismatch, retrying\n");
++				goto retry;
++			} else {
++				warnx("Region checksum mismatch");
++				goto error2;
++			}
++		}
++
++		/*
++		 * After sending the first region with the header in it ask
++		 * the module to check that the new image really applies.
++		 */
++		if (r == 0) {
++			i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++			i2c_write(fd, 0, FIRMWARE_OPS_CMD, 0x10);
++			for (t = 0; (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) && t < timeout; t++)
++				usleep(1000);
++			if (t >= timeout) {
++				warnx("Validate Firmware Header timeout: %04x",
++				    i2c_read16(fd, 0, NVDIMM_CMD_STATUS0));
++				goto timeout;
++			}
++			if (i2c_read(fd, 0, FIRMWARE_OPS_STATUS) & 0x02) {
++				warnx("Validate Firmware Header failed: %02x",
++				    i2c_read(fd, 0, FIRMWARE_OPS_STATUS));
++				goto error2;
++			}
++			printf("\rValidate Firmware Header succeeded\n");
++		}
++
++		/* The region seems to be correct, commit it. */
++		i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++		i2c_write(fd, 0, FIRMWARE_OPS_CMD, 0x08);
++		for (t = 0; (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) && t < timeout; t++)
++			usleep(1000);
++		if (t >= timeout) {
++			warnx("Commit Firmware timeout: %04x",
++			    i2c_read16(fd, 0, NVDIMM_CMD_STATUS0));
++			goto timeout;
++		}
++		if (i2c_read(fd, 0, FIRMWARE_OPS_STATUS) & 0x02) {
++			warnx("Commit Firmware failed: %02x",
++			    i2c_read(fd, 0, FIRMWARE_OPS_STATUS));
++			goto error2;
++		}
++	}
++	i2c_write(fd, 3, TYPED_BLOCK_DATA, 0x00);
++	printf("\rSend Firmware Update Data succeeded\n");
++	fflush(stdout);
++
++	/* Validate firmware image. */
++	printf("Validating firmware image... ");
++	fflush(stdout);
++	i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++	i2c_write(fd, 0, FIRMWARE_OPS_CMD, 0x20);
++	for (t = 0; (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) && t < timeout; t++)
++		usleep(1000);
++	if (t >= timeout) {
++		warnx("Validate Firmware Image timeout: %02x",
++		    i2c_read16(fd, 0, NVDIMM_CMD_STATUS0));
++timeout:
++		/* Send Abort command. */
++		i2c_write(fd, 0, 0x43, 0x10);
++		for (t = 0; (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) && t < atimeout; t++)
++			usleep(1000);
++		if (t >= atimeout)
++			warnx("Abort command timeout: %04x",
++			    i2c_read16(fd, 0, NVDIMM_CMD_STATUS0));
++		else if ((i2c_read(fd, 0, FIRMWARE_OPS_STATUS) & 0x10) == 0)
++			warnx("Abort command haven't succeeded: %02x",
++			    i2c_read(fd, 0, FIRMWARE_OPS_STATUS));
++		goto error2;
++	}
++	if (i2c_read(fd, 0, FIRMWARE_OPS_STATUS) & 0x02) {
++		warnx("Validate Firmware Image failed: %02x",
++		    i2c_read(fd, 0, FIRMWARE_OPS_STATUS));
++error2:
++		/* Disable firmware update mode. */
++		i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++		i2c_write(fd, 0, FIRMWARE_OPS_CMD, 0);
++		for (t = 0; (i2c_read(fd, 0, NVDIMM_CMD_STATUS0) & 1) && t < timeout; t++)
++			usleep(1000);
++		if (t >= timeout)
++			warnx("Disable firmware update mode timeout: %04x",
++			    i2c_read16(fd, 0, NVDIMM_CMD_STATUS0));
++		else if (i2c_read(fd, 0, FIRMWARE_OPS_STATUS) & 0x04)
++			warnx("Firmware update mode disable error: %02x",
++			    i2c_read(fd, 0, FIRMWARE_OPS_STATUS));
++error:
++		goto done;
++	}
++	printf("\rValidate Firmware Image succeeded\n");
++	fflush(stdout);
++
++	/* Finish firmware update via DSM. */
++	i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++	memset(&status, 0xff, sizeof(status));
++	if (calldsm(fd, 24, NULL, 0, status, sizeof(status)) != 4)
++		err(EX_NOINPUT, "Can't call Finish Firmware Update DSM");
++	if (le32dec(&status[0]) != 0)
++		errx(EX_NOINPUT, "Finish Firmware Update DSM status: %x",
++		    le32dec(&status[0]));
++	printf("Finish Firmware Update succeeded\n");
++	fflush(stdout);
++
++	/* Select firmware image slot 1 */
++	i2c_write(fd, 0, NVDIMM_MGT_CMD1, 1 << 1);
++	buf[0] = 1;	/* Firmware Slot 1 */
++	memset(&status, 0xff, sizeof(status));
++	if (calldsm(fd, 25, buf, 1, status, sizeof(status)) != 4)
++		err(EX_NOINPUT, "Can't call Select Firmware Image Slot DSM");
++	if (le32dec(&status[0]) != 0)
++		errx(EX_NOINPUT, "Select Firmware Image Slot DSM failed: %x",
++		    le32dec(&status[0]));
++	printf("Select Firmware Image Slot 1 succeeded\n");
++	fflush(stdout);
++
++done:
++	free(image);
++}
++
++static void
++health(int fd, struct ixnvdimm_info *info)
++{
++	int val;
++	char buf[32];
++
++	printf("Module:\n");
++	printf("vendor: %04x device: %04x revision: %02x\n",
++	    info->VendorId, info->DeviceId, info->RevisionId);
++	printf("subvendor: %04x subdevice: %04x subrevision: %02x\n",
++	    info->SubsystemVendorId, info->SubsystemDeviceId,
++	    info->SubsystemRevisionId);
++	printf("serial: %08X\n", be32toh(info->SerialNumber));
++
++	printf("\nFirmware:\n");
++	printf("slot0: %04x sub: %02x es: %04x\n", i2c_read16(fd, 0, 0x07),
++	    i2c_read(fd, 0, 0x0b), i2c_read16(fd, 1, 0x08));
++	printf("slot1: %04x sub: %02x es: %04x\n", i2c_read16(fd, 0, 0x09),
++	    i2c_read(fd, 0, 0x0c), i2c_read16(fd, 1, 0x0a));
++	val = i2c_read(fd, 0x03, FW_SLOT_INFO);
++	printf("selected: %u running: %u\n", val & 0x0f, val >> 4);
++
++	bzero(&buf, sizeof(buf));
++	if (calldsm(fd, 10, NULL, 0, buf, sizeof(buf)) >= 5) {
++		val = buf[4];
++		printf("\nCritical Health Info: 0x%02x <%s%s%s%s%s%s>\n",
++		    val,
++		    val & 0x01 ? "PERSISTENCY_LOST_ERROR,":"",
++		    val & 0x02 ? "WARNING_THRESHOLD_EXCEEDED,":"",
++		    val & 0x04 ? "PERSISTENCY_RESTORED,":"",
++		    val & 0x08 ? "BELOW_WARNING_THRESHOLD,":"",
++		    val & 0x10 ? "PERMANENT_HARDWARE_FAILURE,":"",
++		    val & 0x20 ? "EVENT_N_LOW":"");
++	}
++
++	bzero(&buf, sizeof(buf));
++	if (calldsm(fd, 11, NULL, 0, buf, sizeof(buf)) >= 13) {
++		val = le16dec(&buf[4]);
++		printf("\nModule Health: 0x%04x <%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s>\n",
++		    val,
++		    val & 0x0001 ? "VOLTAGE_REGULATOR_FAILED,":"",
++		    val & 0x0002 ? "VDD_LOST,":"",
++		    val & 0x0004 ? "VPP_LOST,":"",
++		    val & 0x0008 ? "VTT_LOST,":"",
++		    val & 0x0010 ? "DRAM_NOT_SELF_REFRESH,":"",
++		    val & 0x0020 ? "CONTROLLER_HARDWARE_ERROR,":"",
++		    val & 0x0040 ? "NVM_CONTROLLER_ERROR,":"",
++		    val & 0x0080 ? "NVM_LIFETIME_ERROR,":"",
++		    val & 0x0100 ? "NOT_ENOUGH_ENERGY_FOR_CSAVE,":"",
++		    val & 0x0200 ? "INVALID_FIRMWARE_ERROR,":"",
++		    val & 0x0400 ? "CONFIG_DATA_ERROR,":"",
++		    val & 0x0800 ? "NO_ES_PRESENT,":"",
++		    val & 0x1000 ? "ES_POLICY_NOT_SET,":"",
++		    val & 0x2000 ? "ES_HARDWARE_FAILURE,":"",
++		    val & 0x4000 ? "ES_HEALTH_ASSESSMENT_ERROR,":"");
++		val = le16dec(&buf[6]);
++		printf("Module Current Temperature: %d C\n", val);
++		val = buf[8];
++		printf("Error Threshold Status: 0x%02x <%s%s%s>\n",
++		    val,
++		    val & 0x01 ? "NVM_LIFETIME_ERROR,":"",
++		    val & 0x02 ? "ES_LIFETIME_ERROR,":"",
++		    val & 0x04 ? "ES_TEMP_ERROR,":"");
++		val = buf[9];
++		printf("Warning Threshold Status: 0x%02x <%s%s%s>\n",
++		    val,
++		    val & 0x01 ? "NVM_LIFETIME_WARNING,":"",
++		    val & 0x01 ? "ES_LIFETIME_WARNING,":"",
++		    val & 0x01 ? "ES_TEMP_WARNING,":"");
++		printf("NVM Lifetime: %d%%\n",  buf[10]);
++		printf("Count of DRAM Uncorrectable ECC Errors: %d\n", buf[11]);
++		printf("Count of DRAM Correctable ECC Error Above Threshold Events: %d\n",
++		    buf[12]);
++		val = i2c_read(fd, 0, 0x64);
++		printf("Last Catastrophic Save: 0x%02x <%s%s%s%s%s>\n", val,
++		    val & 0x01 ? "SUCCESS,":"",
++		    val & 0x02 ? "ERROR,":"",
++		    val & 0x04 ? "REJECT,":"",
++		    val & 0x10 ? "ABORT_SUCCESS,":"",
++		    val & 0x20 ? "ABORT_ERROR":"");
++		val = i2c_read(fd, 0, 0x80);
++		printf("Last Catastrophic Save Info: 0x%02x <%s%s%s%s>\n", val,
++		    val & 0x01 ? "NVM_Data_Valid,":"",
++		    val & 0x02 ? "START_CSAVE,":"",
++		    val & 0x04 ? "SAVE_n,":"",
++		    val & 0x08 ? "RESET_n":"");
++		val = i2c_read16(fd, 0, 0x84);
++		printf("Last Catastrophic Save Fail Info: 0x%04x <%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s>\n",
++		    val,
++		    val & 0x0001 ? "VOLTAGE_REGULATOR_FAILED,":"",
++		    val & 0x0002 ? "VDD_LOST,":"",
++		    val & 0x0004 ? "VPP_LOST,":"",
++		    val & 0x0008 ? "VTT_LOST,":"",
++		    val & 0x0010 ? "DRAM_NOT_SELF_REFRESH,":"",
++		    val & 0x0020 ? "CONTROLLER_HARDWARE_ERROR,":"",
++		    val & 0x0040 ? "NVM_CONTROLLER_ERROR,":"",
++		    val & 0x0080 ? "NVM_MEDIA_ERROR,":"",
++		    val & 0x0100 ? "NOT_ENOUGH_ENERGY_FOR_CSAVE,":"",
++		    val & 0x0200 ? "PARTIAL_DATA_SAVED,":"",
++		    val & 0x0400 ? "SAVE_ABORT,":"",
++		    val & 0x0800 ? "NO_SAVE_N,":"",
++		    val & 0x1000 ? "INSUFFICIENT_SAVE_N,":"",
++		    val & 0x2000 ? "NO_RESET_N,":"",
++		    val & 0x4000 ? "SECURITY_ERROR":"");
++		val = i2c_read(fd, 0, 0x66);
++		printf("Last Restore: 0x%02x <%s%s%s%s>\n", val,
++		    val & 0x01 ? "SUCCESS,":"",
++		    val & 0x02 ? "ERROR,":"",
++		    val & 0x10 ? "ABORT_SUCCESS,":"",
++		    val & 0x20 ? "ABORT_ERROR":"");
++		val = i2c_read(fd, 0, 0x88);
++		printf("Last Restore Fail Info: 0x%02x <%s%s%s%s%s%s>\n", val,
++		    val & 0x01 ? "INVALID_IMAGE,":"",
++		    val & 0x02 ? "SECURITY_ERROR,":"",
++		    val & 0x10 ? "DRAM_NOT_SELF_REFRESH,":"",
++		    val & 0x20 ? "CONTROLLER_HARDWARE_ERROR,":"",
++		    val & 0x40 ? "NVM_CONTROLLER_ERROR,":"",
++		    val & 0x80 ? "NVM_MEDIA_ERROR":"");
++		val = i2c_read(fd, 0, 0x68);
++		printf("Last Erase: 0x%02x <%s%s%s%s>\n", val,
++		    val & 0x01 ? "SUCCESS,":"",
++		    val & 0x02 ? "ERROR,":"",
++		    val & 0x10 ? "ABORT_SUCCESS,":"",
++		    val & 0x20 ? "ABORT_ERROR":"");
++		val = i2c_read(fd, 0, 0x6a);
++		printf("Last Arm: 0x%02x <%s%s%s%s%s%s>\n", val,
++		    val & 0x01 ? "SUCCESS,":"",
++		    val & 0x02 ? "ERROR,":"",
++		    val & 0x04 ? "SAVE_N_ARMED,":"",
++		    val & 0x08 ? "RESET_N_ARMED,":"",
++		    val & 0x10 ? "ABORT_SUCCESS,":"",
++		    val & 0x20 ? "ABORT_ERROR":"");
++	}
++
++	bzero(&buf, sizeof(buf));
++	if (calldsm(fd, 12, NULL, 0, buf, sizeof(buf)) >= 11) {
++		printf("\nES Lifetime Percentage: %d%%\n", buf[4]);
++		val = le16dec(&buf[5]);
++		/* Workaround wrong units reported by Micron NVDIMMs. */
++		if ((val & 0x1000) != 0)
++			val = - (val & 0x0fff) / 16;
++		else if (val >= 128)
++			val = (val & 0x0fff) / 16;
++		printf("ES Current Temperature: %d C\n", val);
++		printf("Total Runtime: %d\n", le32dec(&buf[7]));
++	}
++
++	bzero(&buf, sizeof(buf));
++	if (calldsm(fd, 13, NULL, 0, buf, sizeof(buf)) >= 11) {
++		val = le16dec(&buf[4]);
++		printf("\nDuration of Last Save Operation: %d%s\n",
++		    val & 0x7fff, val & 0x8000 ? "s" : "ms");
++		val = le16dec(&buf[8]);
++		printf("Duration of Last Restore Operation: %d%s\n",
++		    val & 0x7fff, val & 0x8000 ? "s" : "ms");
++		val = le16dec(&buf[12]);
++		printf("Duration of Last Erase Operation: %d%s\n",
++		    val & 0x7fff, val & 0x8000 ? "s" : "ms");
++		printf("Number of Save Operations Completed: %d\n",
++		    le16dec(&buf[16]));
++		printf("Number of Restore Operations Completed: %d\n",
++		    le16dec(&buf[20]));
++		printf("Number of Erase Operations Completed: %d\n",
++		    le16dec(&buf[24]));
++		printf("Number of Module Power Cycles: %d\n",
++		    le16dec(&buf[28]));
++	}
++}
++
++static struct regs {
++	int	page;
++	int	off;
++	int	size;
++	const char *name;
++} regs[] = {
++	{ 0,	0x01,	1,	"STD_NUM_PAGES" },
++	{ 0,	0x02,	1,	"VENDOR_START_PAGES" },
++	{ 0,	0x03,	1,	"VENDOR_NUM_PAGES" },
++	{ 0,	0x04,	1,	"HWREV" },
++	{ 0,	0x06,	1,	"SPECREV" },
++	{ 0,	0x07,	2,	"SLOT0_FWREV" },
++	{ 0,	0x09,	2,	"SLOT1_FWREV" },
++	{ 0,	0x0b,	1,	"SLOT0_SUBFWREV" },
++	{ 0,	0x0c,	1,	"SLOT1_SUBFWREV" },
++
++	{ 0,	0x10,	2,	"CAPABILITIES" },
++	{ 0,	0x14,	1,	"ENERGY_SOURCE_POLICY" },
++	{ 0,	0x15,	1,	"HOST_MAX_OPERATION_RETRY" },
++	{ 0,	0x16,	1,	"CSAVE_TRIGGER_SUPPORT" },
++	{ 0,	0x17,	1,	"EVENT_NOTIFICATION_SUPPORT" },
++	{ 0,	0x18,	2,	"CSAVE_TIMEOUT" },
++	{ 0,	0x1a,	2,	"PAGE_SWITCH_LATENCY" },
++	{ 0,	0x1c,	2,	"RESTORE_TIMEOUT" },
++	{ 0,	0x1e,	2,	"ERASE_TIMEOUT" },
++	{ 0,	0x20,	2,	"ARM_TIMEOUT" },
++	{ 0,	0x22,	2,	"FIRMWARE_OPS_TIMEOUT" },
++	{ 0,	0x24,	1,	"ABORT_CMD_TIMEOUT" },
++	{ 0,	0x27,	2,	"MAX_RUNTIME_POWER" },
++	{ 0,	0x29,	2,	"CSAVE_POWER_REQ" },
++	{ 0,	0x2b,	2,	"CSAVE_IDLE_POWER_REQ" },
++	{ 0,	0x2d,	2,	"CSAVE_MIN_VOLT_REQ" },
++	{ 0,	0x2f,	2,	"CSAVE_MAX_VOLT_REQ" },
++	{ 0,	0x31,	1,	"VENDOR_LOG_PAGE_SIZE" },
++	{ 0,	0x32,	1,	"REGION_BLOCK_SIZE" },
++	{ 0,	0x33,	2,	"OPERATIONAL_UNIT_OPS_TIMEOUT" },
++	{ 0,	0x35,	2,	"FACTORY_DEFAULT_TIMEOUT" },
++	{ 0,	0x38,	2,	"MIN_OPERATING_TEMP" },
++	{ 0,	0x3a,	2,	"MAX_OPERATING_TEMP" },
++
++	{ 0,	0x40,	2,	"NVDIMM_MGT_CMD" },
++	{ 0,	0x43,	1,	"NVDIMM_FUNC_CMD" },
++	{ 0,	0x45,	1,	"ARM_CMD" },
++	{ 0,	0x47,	1,	"SET_EVENT_NOTIFICATION_CMD" },
++	{ 0,	0x49,	1,	"SET_ES_POLICY_CMD" },
++	{ 0,	0x4a,	1,	"FIRMWARE_OPS_CMD" },
++	{ 0,	0x4b,	1,	"OPERATIONAL_UNIT_OPS_CMD" },
++	{ 0,	0x4c,	2,	"SECURITY_PROTOCOL_SPECIFIC" },
++	{ 0,	0x4e,	1,	"SECURITY_PROTOCOL_TYPE" },
++
++	{ 0,	0x60,	1,	"NVDIMM_READY" },
++	{ 0,	0x61,	2,	"NVDIMM_CMD_STATUS" },
++	{ 0,	0x64,	1,	"CSAVE_STATUS" },
++	{ 0,	0x66,	1,	"RESTORE_STATUS" },
++	{ 0,	0x68,	1,	"ERASE_STATUS" },
++	{ 0,	0x6a,	1,	"ARM_STATUS" },
++	{ 0,	0x6c,	1,	"FACTORY_DEFAULT_STATUS" },
++	{ 0,	0x6e,	1,	"SET_EVENT_NOTIFICATION_STATUS" },
++	{ 0,	0x70,	1,	"SET_ES_POLICY_STATUS" },
++	{ 0,	0x71,	1,	"FIRMWARE_OPS_STATUS" },
++	{ 0,	0x72,	1,	"OPERATIONAL_UNIT_OPS_STATUS" },
++	{ 0,	0x73,	1,	"ERASE_FAIL_INFO" },
++	{ 0,	0x74,	1,	"FACTORY_DEFAULT_STATUS_FAIL_INFO" },
++	{ 0,	0x75,	1,	"FIRMWARE_OPS_FAIL_INFO" },
++	{ 0,	0x76,	1,	"ARM_FAIL_INFO" },
++
++	{ 0,	0x80,	1,	"CSAVE_INFO" },
++	{ 0,	0x84,	2,	"CSAVE_FAIL_INFO" },
++	{ 0,	0x88,	1,	"RESTORE_FAIL_INFO" },
++	{ 0,	0x8f,	1,	"OPERATIONAL_UNIT_OPS_FAIL_INFO" },
++	{ 0,	0x90,	1,	"NVM_LIFETIME_ERROR_THRESHOLD" },
++	{ 0,	0x91,	1,	"ES_LIFETIME_ERROR_THRESHOLD" },
++	{ 0,	0x94,	2,	"ES_TEMP_ERROR_HIGH_THRESHOLD" },
++	{ 0,	0x96,	2,	"ES_TEMP_ERROR_LOW_THRESHOLD" },
++	{ 0,	0x98,	1,	"NVM_LIFETIME_WARNING_THRESHOLD" },
++	{ 0,	0x99,	1,	"ES_LIFETIME_WARNING_THRESHOLD" },
++	{ 0,	0x9c,	2,	"ES_TEMP_WARNING_HIGH_THRESHOLD" },
++	{ 0,	0x9e,	2,	"ES_TEMP_WARNING_LOW_THRESHOLD" },
++	{ 0,	0xa0,	1,	"MODULE_HEALTH" },
++	{ 0,	0xa1,	2,	"MODULE_HEALTH_STATUS" },
++	{ 0,	0xa5,	1,	"ERROR_THRESHOLD_STATUS" },
++	{ 0,	0xa7,	1,	"WARNING_THRESHOLD_STATUS" },
++	{ 0,	0xa9,	1,	"AUTO_ES_HEALTH_FREQUENCY" },
++	{ 0,	0xaa,	1,	"MODULE_OPS_CONFIG" },
++	{ 0,	0xc0,	1,	"NVM_LIFETIME" },
++
++	{ 1,	0x04,	1,	"ES_HWREV" },
++	{ 1,	0x06,	2,	"ES_FWREV" },
++	{ 1,	0x08,	2,	"SLOT0_ES_FWREV" },
++	{ 1,	0x0a,	2,	"SLOT1_ES_FWREV" },
++	{ 1,	0x10,	2,	"ES_CHARGE_TIMEOUT" },
++	{ 1,	0x14,	1,	"ES_ATTRIBUTES" },
++	{ 1,	0x15,	1,	"ES_TECH" },
++	{ 1,	0x16,	2,	"MIN_ES_OPERATING_TEMP" },
++	{ 1,	0x18,	2,	"MAX_ES_OPERATING_TEMP" },
++	{ 1,	0x30,	1,	"ES_FUNC_CMD" },
++	{ 1,	0x50,	1,	"ES_CMD_STATUS" },
++	{ 1,	0x70,	1,	"ES_LIFETIME" },
++	{ 1,	0x71,	2,	"ES_TEMP" },
++	{ 1,	0x73,	2,	"ES_RUNTIME" },
++
++	{ 2,	0x04,	2,	"LAST_CSAVE_DURATION" },
++	{ 2,	0x06,	2,	"LAST_RESTORE_DURATION" },
++	{ 2,	0x08,	2,	"LAST_ERASE_DURATION" },
++	{ 2,	0x0a,	2,	"CSAVE_SUCCESS_COUNT" },
++	{ 2,	0x0c,	2,	"RESTORE_SUCCESS_COUNT" },
++	{ 2,	0x0e,	2,	"ERASE_SUCCESS_COUNT" },
++	{ 2,	0x10,	2,	"POWER_CYCLE_COUNT" },
++	{ 2,	0x12,	2,	"CSAVE_FAILURE_COUNT" },
++	{ 2,	0x14,	2,	"RESTORE_FAILURE_COUNT" },
++	{ 2,	0x16,	2,	"ERASE_FAILURE_COUNT" },
++	{ 2,	0x18,	2,	"LAST_ARM_DURATION" },
++	{ 2,	0x1a,	2,	"LAST_FACTORY_DEFAULT_DURATION" },
++	{ 2,	0x1c,	2,	"LAST_FIRMWARE_OPS_DURATION" },
++	{ 2,	0x1e,	2,	"LAST_OPERATIONAL_UNIT_OPS_DURATION" },
++
++	{ 2,	0x20,	2,	"ARM_SUCCESS_COUNT" },
++	{ 2,	0x22,	2,	"FACTORY_DEFAULT_SUCCESS_COUNT" },
++	{ 2,	0x24,	2,	"FIRMWARE_SUCCESS_COUNT" },
++	{ 2,	0x26,	2,	"OPERATIONAL_UNIT_SUCCESS_COUNT" },
++	{ 2,	0x28,	2,	"ARM_FAILURE_COUNT" },
++	{ 2,	0x2a,	2,	"FACTORY_DEFAULT_FAILURE_COUNT" },
++	{ 2,	0x2c,	2,	"FIRMWARE_FAILURE_COUNT" },
++	{ 2,	0x2e,	2,	"OPERATIONAL_UNIT_FAILURE_COUNT" },
++
++	{ 2,	0x60,	2,	"INJECT_OPS_FAILURES" },
++	{ 2,	0x64,	1,	"INJECT_ES_FAILURES" },
++	{ 2,	0x65,	1,	"INJECT_FW_FAILURES" },
++	{ 2,	0x67,	1,	"INJECT_BAD_BLOCK_CAP" },
++	{ 2,	0x78,	1,	"INJECT_ERROR_TYPE" },
++	{ 2,	0x80,	1,	"DRAM_ECC_ERROR_COUNT" },
++	{ 2,	0x81,	1,	"DRAM_THRESHOLD_ECC_COUNT" },
++	{ 2,	0x82,	1,	"HOST_MANAGED_ES_ATTRIBUTES" },
++	{ 2,	0x83,	1,	"HOST_CSAVE_FAIL" },
++	{ 2,	0x84,	2,	"HOST_CSAVE_WORKFLOW_FAILURE_COUNT" },
++
++	{ 3,	0x04,	1,	"TYPED_BLOCK_DATA" },
++	{ 3,	0x05,	2,	"REGION_ID" },
++	{ 3,	0x07,	1,	"BLOCK_ID" },
++	{ 3,	0x08,	3,	"TYPED_BLOCK_DATA_SIZE" },
++	{ 3,	0x0c,	2,	"OPERATIONAL_UNIT_ID" },
++	{ 3,	0x10,	3,	"OPERATIONAL_UNIT_SIZE" },
++	{ 3,	0x14,	2,	"OPERATIONAL_UNIT_CRC" },
++	{ 3,	0x40,	2,	"FW_REGION_CRC" },
++	{ 3,	0x42,	1,	"FW_SLOT_INFO" },
++
++	{ 3,	0x80,	32,	"TYPED_BLOCK_DATA_BYTE" },
++
++	{ 0,	0,	0,	NULL },
++};
++
++static int
++reg_parse(const char *name, int *page, int *off, int *size)
++{
++	int i, l, o = -1;
++
++	for (i = 0; regs[i].name != NULL; i++) {
++		l = strlen(regs[i].name);
++		if (strncmp(name, regs[i].name, l) != 0)
++			continue;
++		if (name[l] == 0)
++			break;
++		if (name[l] - '0' < regs[i].size) {
++			o = name[l] - '0';
++			break;
++		}
++	}
++	if (regs[i].name == NULL)
++		return (0);
++	*page = regs[i].page;
++	if (o >= 0) {
++		*off = regs[i].off + o;
++		*size = 1;
++	} else {
++		*off = regs[i].off;
++		*size = regs[i].size;
++	}
++	return (1);
++}
++
++static void
++usage(const char *progname)
++{
++
++	fprintf(stderr, "usage: %s {nvdimm}\n", progname);
++	fprintf(stderr, "       %s -F {nvdimm}\n", progname);
++	fprintf(stderr, "       %s -d {nvdimm}\n", progname);
++	fprintf(stderr, "       %s -f {firmware} [-I] {nvdimm}\n", progname);
++	fprintf(stderr, "       %s -r [-h] {nvdimm} [{page} [{off}] | {reg}]\n", progname);
++	fprintf(stderr, "       %s -w [-h] {nvdimm} ({page} {off} | {reg}) {val}\n", progname);
++	exit(1);
++}
++
++int
++main(int argc, char *argv[])
++{
++	struct ixnvdimm_info info;
++	const char *progname, *devname, *f = NULL;
++	char *e;
++	int F = 0, I = 0, b, c, d = 0, i, fd, h = 0, r = 0, w = 0;
++	int page = -1, off = -1, size = 1;
++	uint32_t funcs, val;
++	uint8_t	buf[4];
++
++	progname = argv[0];
++
++	while ((c = getopt(argc, argv, "FIdf:hrw")) != -1) {
++		switch (c) {
++		case 'd':
++			d = 1;
++			break;
++		case 'F':
++			F = 1;
++			break;
++		case 'I':
++			I = 1;
++			break;
++		case 'f':
++			f = optarg;
++			break;
++		case 'r':
++			r = 1;
++			break;
++		case 'w':
++			w = 1;
++			break;
++		case 'h':
++			h = 1;
++			size = 2;
++			break;
++		default:
++			usage(progname);
++			/* NOTREACHED */
++		}
++	}
++	argc -= optind;
++	argv += optind;
++
++	if (argc < 1 || (d + r + w + (f != NULL) > 1) || (h && !r && !w))
++		usage(progname);
++
++	devname = argv[0];
++	argc--;
++	argv++;
++	if ((fd = open(devname, O_RDWR)) < 0)
++		err(EX_NOINPUT, "Can't open %s", devname);
++	init(devname);
++
++	if (getinfo(fd, &info))
++		err(EX_NOINPUT, "Can't get info from %s", devname);
++
++#ifdef __linux__
++	funcs = readsysfs("dsm_mask");
++	funcs |= 1;
++#else
++	bzero(&buf, sizeof(buf));
++	if (calldsm(fd, 0, NULL, 0, buf, sizeof(buf)) != 4)
++		err(EX_NOINPUT, "Can't call DSM on %s", devname);
++	funcs = le32dec(&buf[0]);
++#endif
++	if (~funcs & 0x18000001) {
++		errx(EX_UNAVAILABLE, "Required Microsoft DSM functions "
++		    "are not supported: 0x%08x\n", funcs);
++	}
++
++	if (d) {
++		int snp, vsp, vnp;
++
++		snp = i2c_read(fd, 0, 1);
++		vsp = i2c_read(fd, 0, 2);
++		vnp = i2c_read(fd, 0, 3);
++		for (page = 0; page < snp; page++) {
++			printf("Page 0x%02x:\n", page);
++			for (off = 0; off < 256; off++) {
++				printf(" %02x", i2c_read(fd, page, off));
++				if ((off % 16) == 15)
++					printf("\n");
++			}
++		}
++		for (page = vsp; page < vsp+vnp; page++) {
++			printf("Page 0x%02x:\n", page);
++			for (off = 0; off < 256; off++) {
++				printf(" %02x", i2c_read(fd, page, off));
++				if ((off % 16) == 15)
++					printf("\n");
++			}
++		}
++		goto done;
++	}
++	if (F) {
++		if (~funcs & 0x08200001) {
++			errx(EX_UNAVAILABLE, "Required Microsoft DSM functions "
++			    "are not supported: 0x%08x\n", funcs);
++		}
++		factory_default(fd);
++		goto done;
++	}
++	if (f) {
++		if (~funcs & 0x1bc00001) {
++			errx(EX_UNAVAILABLE, "Required Microsoft DSM functions "
++			    "are not supported: 0x%08x\n", funcs);
++		}
++		firmware_update(fd, &info, f, I);
++		goto done;
++	}
++	if (r || w) {
++		if (argc < 1 && w) {
++			usage(progname);
++		} else if (argc < 1) {
++			;
++		} else if (reg_parse(argv[0], &page, &off, &size)) {
++			argc--;
++			argv++;
++		} else {
++			if (argc < 1)
++				usage(progname);
++			page = strtol(argv[0], &e, 0);
++			if (e[0] != 0)
++				usage(progname);
++			argc--;
++			argv++;
++			if (argc >= 1) {
++				off = strtol(argv[0], &e, 0);
++				if (e[0] != 0)
++					usage(progname);
++				argc--;
++				argv++;
++			}
++		}
++	}
++	if (r) {
++		if (off >= 0) {
++			for (b = 0; b < size; b++)
++				printf("%02x", i2c_read(fd, page, off + size - b - 1));
++			printf("\n");
++			goto done;
++		}
++		for (i = 0; regs[i].name != NULL; i++) {
++			if (page >= 0 && regs[i].page != page)
++				continue;
++			printf("%-36s ", regs[i].name);
++			for (b = 0; b < regs[i].size; b++)
++				printf("%02x", i2c_read(fd, regs[i].page, regs[i].off + regs[i].size - b - 1));
++			printf("\n");
++		}
++		goto done;
++	}
++	if (w) {
++		if (argc < 1 || size > 3 || page < 0 || off < 0)
++			usage(progname);
++		val = strtol(argv[0], &e, 0);
++		if (e[0] != 0 || val > (size == 3 ? 16777216 : (size == 2 ? 65535 : 255)))
++			usage(progname);
++		if (size == 3) {
++			i2c_write16(fd, page, off, val);
++			i2c_write(fd, page, off + 2, val >> 16);
++		} else if (size == 2)
++			i2c_write16(fd, page, off, val);
++		else
++			i2c_write(fd, page, off, val);
++		goto done;
++	}
++
++	health(fd, &info);
++done:
++	close(fd);
++	exit(0);
++}
+-- 
+2.55.0.windows.3
+

@@ -1,0 +1,53 @@
+From b4552154311f1fae9bd58a89fb4999c1e0b56171 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 21:00:56 +0800
+Subject: [PATCH] optional: ACPI dirty hack for Supermicro NVDIMM Package->int
+ (6137bc01252) [HARDWARE-SPECIFIC]
+
+exconvrt.c AcpiExConvertToInteger(): add 'case ACPI_TYPE_PACKAGE: break;'
+(convert Package to int without erroring). exresop.c AcpiExResolveOperands():
+add ACPI_TYPE_PACKAGE to the valid operand type list.
+
+Dirty hack to work around a buggy Supermicro NVDIMM ACPI implementation
+that accesses one parameter both as Package and Buffer, erroring either
+way. Silently swallows the error so NVDIMM ACPI evaluation can proceed.
+
+OPTIONAL / HARDWARE-SPECIFIC: only needed on platforms with the
+Supermicro NVDIMM ACPI bug; correct BIOS is unaffected. Modifies upstream
+ACPICA contrib (must preserve across ACPICA upgrades). Conflict-free
+rebase (15.1 exconvrt.c drifted but this ConvertToInteger site merged
+cleanly).
+---
+ sys/contrib/dev/acpica/components/executer/exconvrt.c | 3 +++
+ sys/contrib/dev/acpica/components/executer/exresop.c  | 1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/sys/contrib/dev/acpica/components/executer/exconvrt.c b/sys/contrib/dev/acpica/components/executer/exconvrt.c
+index 9c091864d7ef..45ef15df9665 100644
+--- a/sys/contrib/dev/acpica/components/executer/exconvrt.c
++++ b/sys/contrib/dev/acpica/components/executer/exconvrt.c
+@@ -218,6 +218,9 @@ AcpiExConvertToInteger (
+         Count   = ObjDesc->Buffer.Length;
+         break;
+ 
++    case ACPI_TYPE_PACKAGE:
++        break;
++
+     default:
+ 
+         return_ACPI_STATUS (AE_TYPE);
+diff --git a/sys/contrib/dev/acpica/components/executer/exresop.c b/sys/contrib/dev/acpica/components/executer/exresop.c
+index 0a89bc78d3e3..17f1bbe1496a 100644
+--- a/sys/contrib/dev/acpica/components/executer/exresop.c
++++ b/sys/contrib/dev/acpica/components/executer/exresop.c
+@@ -627,6 +627,7 @@ AcpiExResolveOperands (
+             case ACPI_TYPE_INTEGER:
+             case ACPI_TYPE_STRING:
+             case ACPI_TYPE_BUFFER:
++            case ACPI_TYPE_PACKAGE:
+ 
+                 /* Valid operand */
+                break;
+-- 
+2.55.0.windows.3
+

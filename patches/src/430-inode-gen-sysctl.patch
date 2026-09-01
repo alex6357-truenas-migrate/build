@@ -1,0 +1,54 @@
+From 0d27db82a29445a75f370c4a2ed596db3a7eb6f9 Mon Sep 17 00:00:00 2001
+From: Alex6357 <73743056+Alex6357@users.noreply.github.com>
+Date: Mon, 10 Aug 2026 20:50:03 +0800
+Subject: [PATCH] kernel-misc: unprivileged_inode_gen sysctl (d17966534f2)
+
+kern_priv.c: add security.bsd.unprivileged_inode_gen (RWTUN, default 0);
+priv_check_cred_vfs_generation()/slow allow non-root non-jail creds to
+read inode generation when set. Needed for SMB: TrueNAS builds the
+MS-SMB2 64-bit file id from (inode, generation), so Samba needs
+non-privileged generation access. Default off; jail still denied.
+Conflict-free rebase (15.1 kern_priv has the function, no sysctl).
+---
+ sys/kern/kern_priv.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/sys/kern/kern_priv.c b/sys/kern/kern_priv.c
+index 83fd246eef9b..decc219e140c 100644
+--- a/sys/kern/kern_priv.c
++++ b/sys/kern/kern_priv.c
+@@ -91,6 +91,11 @@ SYSCTL_INT(_security_bsd, OID_AUTO, unprivileged_read_msgbuf,
+     CTLFLAG_RW, &unprivileged_read_msgbuf, 0,
+     "Unprivileged processes may read the kernel message buffer");
+ 
++static int	unprivileged_inode_gen;
++SYSCTL_INT(_security_bsd, OID_AUTO, unprivileged_inode_gen,
++    CTLFLAG_RWTUN, &unprivileged_inode_gen, 0,
++    "Unprivileged processes may read inode generation");
++
+ SDT_PROVIDER_DEFINE(priv);
+ SDT_PROBE_DEFINE1(priv, kernel, priv_check, priv__ok, "int");
+ SDT_PROBE_DEFINE1(priv, kernel, priv_check, priv__err, "int");
+@@ -339,7 +344,8 @@ priv_check_cred_vfs_generation_slow(struct ucred *cred)
+ 		goto out;
+ 	}
+ 
+-	if (cred->cr_uid == 0 && suser_enabled(cred)) {
++	if (unprivileged_inode_gen ||
++	    (cred->cr_uid == 0 && suser_enabled(cred))) {
+ 		error = 0;
+ 		goto out;
+ 	}
+@@ -360,7 +366,8 @@ priv_check_cred_vfs_generation(struct ucred *cred)
+ 		return (priv_check_cred_vfs_generation_slow(cred));
+ 
+ 	error = EPERM;
+-	if (!jailed(cred) && cred->cr_uid == 0 && suser_enabled(cred))
++	if (!jailed(cred) && (unprivileged_inode_gen ||
++            (cred->cr_uid == 0 && suser_enabled(cred))))
+ 		error = 0;
+ 	return (error);
+ }
+-- 
+2.55.0.windows.3
+
