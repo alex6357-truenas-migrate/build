@@ -151,7 +151,7 @@ freenas/freenas-files
 freenas/pipewatcher
 freenas/freenas-migrate93
 freenas/freenas-migrate113
-freenas/freenas-webui        # P4 或被 freenas/webui-dist 取代
+freenas/webui-dist           # P4 主线；freenas-webui（源码原地构建）仅备手动切换
 freenas/py-middlewared       # 依赖链广播：py-netif/py-bsd/py-cam/py-libzfs...
 freenas/py-midcli
 freenas/arcsas

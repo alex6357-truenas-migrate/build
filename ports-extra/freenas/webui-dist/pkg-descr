@@ -1,0 +1,5 @@
+TrueNAS WebUI（预编译 dist 过渡包）。
+
+该包只负责把 webui 的静态 dist 产物安装到 /usr/local/www/webui，
+前端代码本身由仓库 webui 在独立环境（node:16/yarn 旧链）构建，
+供 build15 系统在 pkgbase 化交付时携带。后期 webui 现代化后本包废弃。
