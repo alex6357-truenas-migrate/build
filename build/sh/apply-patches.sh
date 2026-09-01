@@ -47,10 +47,24 @@ for _p in $_list; do
     _base=$(basename "$_p")
     if [ -f "$_log" ] && grep -q "^${_base}\$" "$_log"; then
         echo "[patch-$kind] skip $_base (already applied)"
-    else
+        echo "$_base" >>"$_log.tmp"
+        continue
+    fi
+    # mbox (format-patch 产物, 以 'From <sha> ' 开头) 走 git am；纯 diff 走 git apply + 手动 commit
+    if head -1 "$_p" | grep -q '^From [0-9a-f]\{40\} '; then
         echo "[patch-$kind] am $_base"
-        git -C "$_dest" am --3way --committer-date-is-author-date "$_p" || {
+        git -C "$_dest" -c user.name=build15 -c user.email=build15@local \
+            am --3way --committer-date-is-author-date "$_p" || {
             git -C "$_dest" am --abort 2>/dev/null || true
+            echo "[patch-$kind] FAILED: $_base" >&2
+            exit 1
+        }
+    else
+        echo "[patch-$kind] apply $_base"
+        git -C "$_dest" apply --3way "$_p" && \
+        git -C "$_dest" -c user.name=build15 -c user.email=build15@local \
+            commit -qam "build15: apply $_base" || {
+            git -C "$_dest" reset --hard >/dev/null 2>&1 || true
             echo "[patch-$kind] FAILED: $_base" >&2
             exit 1
         }

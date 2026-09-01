@@ -13,6 +13,11 @@ KERN_MODULES?=	autofs bnxt cc cfiscsi ctl dtrace efirt evdev ext2fs firewire geo
 BUILD_ENV=	env -u DEBUG -u MAKEFLAGS MAKEOBJDIRPREFIX=${OBJS}
 SRC_MAKE_CONF=	${OBJS}/src.conf.merged
 
+# NOCLEAN 仅在显式定义时传（空值也会令 src make 判断失准）
+.if defined(NOCLEAN) && ${NOCLEAN:tl} == "yes"
+_NOCLEAN=	NOCLEAN=YES
+.endif
+
 # 把 build/run/boot 三档 src.conf 叠成一份
 ${SRC_MAKE_CONF}:
 	mkdir -p ${OBJS}
@@ -21,7 +26,7 @@ ${SRC_MAKE_CONF}:
 world: ${SRC_MAKE_CONF}
 	${BUILD_ENV} ${MAKE} -C ${WORK_SRC} -j${MAKE_JOBS} \
 		SRCCONF=${SRC_MAKE_CONF:Q} \
-		NOCLEAN=${NOCLEAN:Uno:tl} \
+		${_NOCLEAN} \
 		buildworld
 
 kernel: ${SRC_MAKE_CONF}

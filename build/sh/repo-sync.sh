@@ -44,7 +44,13 @@ sync_one() {
     else
         echo "[repo] clone $_name → $_path ($_ref)"
         _clone_opts=
-        [ -n "$CHECKOUT_SHALLOW" ] && ! is_sha "$_ref" && _clone_opts="--depth 1"
+        # sha 不可直传 -b；分支可 --branch 缩小首拉数据量
+        if is_sha "$_ref"; then
+            _clone_opts=""
+        else
+            _clone_opts="--branch $_ref --single-branch"
+            [ -n "$CHECKOUT_SHALLOW" ] && _clone_opts="$_clone_opts --depth 1"
+        fi
         # shellcheck disable=SC2086
         git clone $_clone_opts "$_url" "$_dest"
     fi
