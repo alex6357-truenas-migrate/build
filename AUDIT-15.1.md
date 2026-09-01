@@ -24,8 +24,34 @@
   2. 上游 webui 仓库产物 dist 的来源（Docker node:16 镜像构建 / 手工一次性构建）在实施时落实；
   3. node9/npm5 port 标 REMOVED 说明。
 
-## middleware（truenas/middleware）
-- 状态：**审计进行中**（子代理 1 执行中/待结果回填）。
+## middleware（truenas/middleware @ cdc3fa664d, truenas/13.3-stable）
+- 角色：middlewared 后端 + nas_ports 私有 ports + freenas-installer。
+- 15.1 风险：
+  1. **python 版本硬假设少**：全仓库 grep `python3.9/python39/python2` 仅 `src/freenas/usr/local/share/python-gdb/libpython.py` 1 处（调试辅助，可安全更新）。middlewared 本身跟随 ports `DEFAULT_VERSIONS`（低）。
+  2. **rc 补丁耦合**（高）：`src/freenas/etc/ix.rc.d/ix-*` 共 15 个脚本 + `etc/rc.d/ix-haready|ix-postinit|ix-update-scripts`；其中 devd `REQUIRE: netif ldconfig` 删除是为 ix-syncdisks 解除循环依赖，rc.subr 不自动 export `${name}_env`（src patch 700）与 ix 脚本自管环境配套。→ src 补丁 300/700 与 middleware 是**强依赖对**。
+  3. **libzfs 绑定**（中）：`middlewared/plugins/pool.py`、`zfs.py`、`*_freebsd.py` 平台模块直接 `import libzfs`（client.py、events 等 8 处）；15.1 需保证 ports-extra 的 `devel/py-libzfs` 与 `filesystems/openzfs`（新分类）版本配套。
+  4. **pkgtools 耦合**（高，pkgbase 迁移点）：`src/freenas-installer/etc/install.sh:1068` 调 `/usr/local/bin/freenas-install -P /.mount/${OS}/Packages -M ...-MANIFEST /tmp/data`；`ix-update`、`rc.d/ix-update-scripts` 驱动 post-install/update 脚本；middlewared `plugins/update.py` 走 `update-check-available` 外部命令链。→ pkgbase 下 ISO 装机流程须改为 `pkg install` 模式，install.sh 需改（P3/P4）。
+  5. **freenas-installer port 极简**：NO_BUILD=yes，只把 `src/freenas-installer/` 脚本装上 staging——保留机制可直接用（仅 port Makefile PORTVERSION 由构建注入）。
+- 必要动作（优先级排序）：
+  1. 装机/更新链路从 pkgtools 迁 pkgbase：改 `install.sh`、替换 `freenas-install` 调用、重写 `update.py` 依赖段（P3）。
+  2. `py-middlewared` port：确认 `USES=python` 版本解析与新版 ports 框架兼容；检查 RUN_DEPENDS 中被 fork 改名的包（参考 ports 盘点节）。
+  3. rc 补丁对（src patch 300/700）在 middleware 侧做行为自测清单。
+
+## ports fork（truenas/ports @ 9461a3499b98, 13.3-stable）
+- **盘点结果**（详见 F:\zvault\_fork_log.txt / _fork_diff_names.txt）：
+  - merge-base = `985bb512c990`（2024-01-04）；fork-only commit **1840**；净 diff **2924 文件 / +113k/-68k**。
+  - **92 个 fork 新增 port 目录**；其中 32 个在当前上游 main 已不存在。分类：
+    - TrueNAS 私有/复活（**须进 ports-extra**，约 20 个）：`net/samba`（全新 port，truenas fork 4.19.6 钉 SHA + wscript 私有 patch + 自带 rc，最重磅）、`sysutils/openzfs` + `openzfs-kmod`（truenas 钉 zfs2.2.5+iX patch，debug/release 双构建）、`devel/py-libzfs`、`net/py-netif`、`devel/py-cam`、`py-bhyve`、`py-kmip`、`py-netsnmpagent`、`py-onedrivesdk`、`sysutils/dsoperator|dssystem|throttle|scanlnk|asigrajail|areca-cli|intel-e810-nvmupdate|sedutil|py-wsdd`、`py-zettarepl`、`grub2`+`grub2-x86_64-efi`、`uefi-edk2-bhyve`、`netatalk3`、`inadyn-troglobit`、`python39-debugging`；
+    - cherry-pick 后上游又删（**丢弃**）：electron25/26/27、openjdk19/20 等；
+    - 其余 60 个均为 backport，上游已有，**丢弃**。
+  - **Mk/ 真 patch（须进 patches/ports）**：`waf.mk` 加 WAF_ENV（samba 必需）；`python.mk` 强制 cryptography-legacy（新快照重审）；`gem.mk` GEMS_SKIP_SUBDIR 重构（仅 gitlab 系需要，可再评）；`bsd.default-versions.mk` NODEJS_DEFAULT=18（15.1 环境重审）；`kde.mk/qt.mk` 纯版本 bump（丢弃）。
+  - 其他：`www/nginx-devel` 仅版本 bump（丢）；`GIDs/UIDs` 无改动；`MOVED` 撤销了 py-ws4py/libhyve-remote/net-wireguard 过期记录；`misc/freebsd-release-manifests` 13.3 manifests（丢）；顶层 Jenkinsfile（不进 overlay）。
+  - 注意点：上游 2026 快照 `sysutils/openzfs` 已迁至 `filesystems/openzfs`、`py-boto3` 从 devel → www、`py-libzfs`/`py-netif` 上游**已彻底移除**（只能从 fork 移植新版）。
+  - 遗留核对：rsync/freerdp/openssh-portable/collectd5/rrdtool/net-snmp/curl/powerdns-recursor 逐 port 剥离 iX 私货；`net/samba` 与上游 `samba4xx` 的 CONFLICTS/分类共存。
+- 必要动作（P2）：
+  1. 按上表抽 ~20 个 fork-only port 进 `ports-extra`（并对 92 个目录逐一裁决 keep/drop）；
+  2. `patches/ports` 落定：waf.mk WAF_ENV、python.mk（重审）、NODEJS_DEFAULT（重审）、MOVED un-expire；
+  3. 私有 port 目录名/分类对齐上游 2026 框架（openzfs → filesystems/、RUN_DEPENDS 路径调整）。
 
 ## py-bsd（truenas/py-bsd master）
 - 状态：**审计进行中**。
