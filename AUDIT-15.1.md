@@ -110,10 +110,30 @@
 - 事实：15.1 base 的 `sys/contrib/openzfs/meta` = **2.4.2**；2026Q3 ports `filesystems/openzfs` = **2.4.3**；fork 钉的是 2.2.5+iX patch（`GH_TAGNAME=4f2aa1382`）。
 - 结论：**删除 fork port 与 fork 源**。fork 时代的 iX 私有 zts 修复已滚入 2.4 主线（iX 上游化习惯）。删除 `REPO_ZFS`、`ports-extra/sysutils/openzfs{,-kmod}`、`ports.list` 中 `sysutils/openzfs` 行；`src.conf.build|boot` 中 `WITHOUT_ZFS` 移除，`world.mk` 的 `KERN_MODULES` 加 `zfs`。
 
-### samba fork → 保留（P6 再核）
-- 事实：fork = 4.19.6 钉 SHA + wscript 私有 patch + 自带 rc；2026Q3 上游有 samba416/419/420/422/423。
-- 判断：samba 是 TrueNAS ACL 核心（与 middleware winacl/persistence 深度耦合），离线无法逐 commit 核对 fork 修复是否已并入 4.2x；切换风险大且本期收益小（15.1 兼容 4.19.6 通过 ports 框架即可）。
-- 结论：**保留**。P6 在构建机用 `git ls-remote`/`git diff` 做一次 fork vs samba-team:master（或 samba423 tag）的判定，再决定是否需要上提。
+### samba fork → 保留（已详核）
+
+**方法**：fork pin `4fec43c0` 相对上游 tag `samba-4.19.6`（`b400092d`）做对向差分；
+用 patch-id 逐 commit 在 upstream 4.23.9（`360b66d5`）与 upstream master（`43ad97b3`）中比对。
+
+**数据**：fork 相对 4.19.6 有 **226 个 commit（219 个非 merge）**；
+其中 upstream 等价 patch（patch-id 匹配）**0 个**（上游并未吸收这些改动，
+因为大部分是产品级 VFS/ACL 功能而非上游通用修复）。
+上游 samba 中无下列 TrueNAS 模块的任何对应实现。
+
+**fork 独有功能层（决定了必须保留 fork）**：
+- VFS 模块：`vfs_ixnas.c`、`vfs_shadow_copy_zfs.c`、`vfs_tmprotect.c`、`vfs_truenas_audit*.c`、`vfs_winmsa.c`（ACL 持久化、ZFS 快照浏览器、tm 时间窗、审计框架、winmsa Mac 扩展属性）；
+- 库：`lib/zfsacl/`（FreeBSD/Linux 双实现 +pyzfsacl pybind）、`truenas_mempool`；
+- 发行触：FreeBSD 构建修复（`d9e5bac0`）、`openat2`/`smb_strtox`/`vfs_tmprotect` FreeBSD 适配。
+
+**上游已有 + fork 也有**：通用 bug 修复在 fork 中的等价，patch-id 与上游均不重合 —— 但注意
+这些改动大多是 fork 上下文定制的（例如 `streams_xattr` 的 ADS 覆盖逻辑、`io_uring` 策略针对 TrueNAS 版本），
+上游即使做过同类问题修复也常改了上下文。这不是"上游已采纳"，而是"两库各自修过"。
+
+**结论**：**保留 fork**（midcli/webui/middleware ACL 都与这些 VFS 模块深度耦合；
+去 fork = 去 TrueNAS 产品特性）。SMB 版本 4.19.6 老于 4.19.9，安全上 CVE 待核 —— 建议 P6 阶段
+把 fork 与 `git.samba.org/samba:v4-19-stable`（最新 4.19.9）做一次 scope=安全 patch 的 backport 补齐。
+
+**迁移等级**：高（无法替换；该工作计划在 truenas-migrate 一侧长期维护）。
 
 ### wsdd fork → 换成上游 ports
 - 事实：上游 `net/py-wsdd @christgau 0.9` 自带 `rc.d/wsdd`（同款 rc 名）；middleware 只按名字 `freebsd_rc="wsdd"` 消费。
