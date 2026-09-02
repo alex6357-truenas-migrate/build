@@ -2,6 +2,16 @@
 
 基线（`repos.conf::REPO_PORTS`）：`git.freebsd.org/ports.git` **2026Q3** 头
 `d870b633c555cfe87437686a0f0b5ca202fbb74b`（2026-08-08）。
+（2026-09 VM 首测 re-pin 到 `56ce79b768`，见 repos.conf；MOVED 补丁已针对新
+pin 重生成。）
+
+## 已删除（2026-09 VM 首测核实）
+
+| 删除文件 | 删除理由 |
+| ---- | ---- |
+| `default-versions-fork.patch` | `NODEJS_DEFAULT 18`：2026Q3 已无 node18（只剩 20/22/24/26）；webui 走预构建 dist 后 ports.list 无任何 node 消费者 |
+| `gem-skip-subdir-fork.patch` | gem.mk 重构仅服务 gitlab+cargo 生态；ports-extra 唯一 gem port（sidekiq71）不引用 GEMS_SKIP_SUBDIR，标准路径即可 |
+| `python-mk-crypto-legacy-fork.patch` | 13.3/py3.9 时代为绕 rust 工具链而强制 cryptography-legacy；15.1/py3.12 上游默认 rust cryptography 正常工作，无需 legacy |
 
 来源：全部自 truenas/ports fork `9461a3499b98` vs merge-base `985bb512c990` 的 diff 抽取。
 **命名约定**：`*-fork.patch` = 从 fork 直接抽出的原始 diff，上下文锚在 fork 基线上；
