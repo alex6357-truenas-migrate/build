@@ -31,4 +31,6 @@ MACHINE_ARCH!=	uname -m
 # 目标基线版本（src 树自身读出，勿写死）
 # FREEBSD_VERSION!= ... P2/P3 补充
 
-.export WORK_ROOT WORK_SRC WORK_PORTS OBJS RELEASE_ROOT PKG_REPO
+# 注意：OBJS 不可 .export —— 15.1 起 bsd.dep.mk 会拒绝对 src 子 make 暴露
+# 含绝对路径的 OBJS 变量（环境继承即视为 make 变量），buildworld 直接报错终止。
+.export WORK_ROOT WORK_SRC WORK_PORTS RELEASE_ROOT PKG_REPO
