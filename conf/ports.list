@@ -79,7 +79,7 @@ benchmarks/netperf
 sysutils/ipmitool
 devel/py-daemon
 www/wgetpaste
-sysutils/sedutil             # ports-extra
+security/sedutil          # 上游 ports（kendmerry fork；放弃 amotin fork）
 sysutils/sg3_utils
 sysutils/smp_utils
 net/trafshow
@@ -105,7 +105,6 @@ sysutils/ncdu
 www/novnc
 www/novnc-websockify
 net/libvncserver
-devel/libhyve-remote         # ports-extra（bhyve-vnc patch 运行依赖）
 graphics/drm-kmod
 net/aquantia-atlantic-kmod
 net/realtek-re-kmod

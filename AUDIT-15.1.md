@@ -149,9 +149,12 @@
 - 结论：**删除** fork port（已删 `ports-extra/sysutils/py-wsdd`、`REPO_WSDD`），`ports.list` 加 `net/py-wsdd`。
 - 遗留：上游 0.9 vs fork 0195eff 的发行窗可能缺小补丁；影响面为 Windows 网络发现可见性，可接受。
 
-### sedutil → 保留（amotin fork）
-- 事实：上游 ports 无 `sysutils/sedutil`；上游仓库是 Drive-Trust-Alliance/sedutil，Python 重版在 `py-sedutil`（不兼容 CLI 使用语义）；amotin fork 含 freebsd/CLI 原生构建。
-- 结论：**保留** freenas 侧 fork port。
+### sedutil → 用上 游 ports（替换裁决）
+
+（替代之前的"保留 amotin fork"。**本裁决由 maintenance-gap 子代理纠正**：）
+- 事实更正：上游 ports 已有 `security/sedutil`（kendmerry fork，`bin/sedutil-cli`）；此前审计错把 `sysutils/sedutil`(amotin fork) 当成唯一方案。
+- middleware 调用点是 `sedutil-cli`（PATH 无关，含 webui SED 密码页面），两侧 API 一致。
+- 结论：**用上游 ports 的 `security/sedutil`**，`ports.list` 的 `sysutils/sedutil` 改为 `security/sedutil`（已完成）；amotin fork 删除（nvme OPAL 特殊场景才有意义，本次不覆盖）。
 
 ### licenselib → 保留（仅 truenas 使用，且是产品功能）
 - 消费方：middleware `plugins/system.py`、`scripts/hadetect.py`、`freenas-debug/system/system.sh`（Enterprise 授权）；webui 无直接引用。
@@ -166,3 +169,53 @@
 
 ### core-build → 已物理删除
 - 旧构建系统不再留在工作区（参考信息全在 build/AUDIT 与本文件中）。
+
+---
+
+## maintenance-gap 追加裁决（子代理详核）
+
+来源：`F:\zvault\_scratch\maintenance-gap-analysis.md`。贯穿性发现：**freecore 的"不维护"九成是"消费不 fork"**（钉死上游 commit + 在自己 nas_ports 里压一个 patch，不重写），真正彻底删除的只有 TrueCommand Cloud、HA/fenced、openvpn、truenas_audit、KMIP。
+
+### zettarepl → 追 truenas（不 fork）
+- freecore middleware 完整保留 `from zettarepl.*`（与 truenas 13.3 一字不差），只是恢复了一个 port `nas_ports/sysutils/py-zettarepl` 钉 `truenas/zettarepl@60ade60` + 一行 paramiko DSSKey patch。
+- **本地动作**：仓库已放到 `nas-build/zettarepl`（12f2fd4=SCALE-era，13.3 要改用 pin 60ade60），port Makefile 需要定 pin + 补丁（待 P2b 定稿）。
+
+### midcli → 追 truenas（不 fork）
+- freecore 没砍，truenas 主线还在维护（绑 SCALE）——钉回 freenas/midcli@5ac8045（与 13.3 相同）即可。
+- **本地动作**：仓库已收 nas-build/midcli。
+
+### truecommand-stats → 保留源头，功能可砍
+- 真身是 Go 二进制 trueview-stats；truenas 2022-10 archive 是因为 SCALE master 切到 netdata。freecore 的处理参考：保留 trueview.py + `nas_ports/freenas/tc-stats`port 改成 go build，砍 TrueCommand Cloud。我们采纳同样方案，**不 fork 不维护**。
+
+### libhyve-remote / py-bhyve → 物理删除（本裁决替代早先"自持有"）
+- freecore 没砍 VM（vm-bhyve/grub2-bhyve/edk2/novnc/py-websockify/libvncserver 都在），但砍掉了 `devel/libhyve-remote` port（"broken since 2020"，被 libvncserver+novnc 替代）与 `py-bhyve`（middleware 全分支 0 次 `import bhyve`）。
+- middleware `VNC.bhyve_args` 只构造 `tcp=` 从不发 `vncserver=1`，所以 libhyve-remote 恒走 dlopen 失败回落 in-tree rfb——本就是死链路。
+- **本地动作**：`ports-extra/devel/{libhyve-remote,py-bhyve}` 已删，`nas-build/{py-bhyve,libhyve-remote}` clone 已删。
+- **重要**：src patch 100-bhyve-vnc-libhyve-remote.patch **仍然必须**——真正要保留的是 `rfb.c` waitfd escape hatch + `vmmapi.c` CAP_FSTATAT（freecore 把同一批 src delta 也带回来了）。
+
+### pylzfs/py-netif/py-cam → truenas 版 py-libzfs 跟着主线，py-netif/py-cam 换 freecore
+- 前文 UPSTREAMS 表已写。**py-netif / py-cam** 在 truenas 侧 frozen，freecore 有更活的维护；如果迁移需要新版，从 freecore 拿。当前仍用 truenas/freenas 的 pin（工作区已有）。
+
+### samba → 保留 fork，且 freecore 的 delta 给了一条退路
+- freecore-samba delta（9k 行修正案）明确还在 build 里启用 `vfs_ixnas vfs_shadow_copy_zfs vfs_zfs_core vfs_zfs_fsrvp vfs_tmprotect vfs_noacl vfs_winmsa vfs_zfs_space vfs_aio_fbsd`（middleware `smb_/registry.py:158` 也全部在）；被砍的只有 `vfs_truenas_audit`（我们 middleware 不生成）与 vfs_freebsd（13.3 patch 从未上游，freecore 15.0 明确 drop until carried into fork）。
+- 所以就维护成本与我们 fork 差异（审计见上），**fork 继续保留**，同时 freecore 的 delta 可以作为"剔除 audit + zfs fsrvp 怎么做"的迁移参考。
+
+### 参考裁决速查（九分法）
+
+| 仓库 | 追踪 | 形式 |
+|---|---|---|
+| middleware | truenas | fork（在我们 org 上重写历史后继续 fork） |
+| webui | truenas | fork（P4 产物直蒸馏 webui-dist） |
+| licenselib | truenas | fork（纯 python，低风险） |
+| py-bsd | truenas | fork（删 dialog/nis/extattr/bpf 收缩） |
+| py-libzfs | truenas | 直接消费 |
+| py-netif | freecore-project | 直接消费（truenas frozen） |
+| py-cam | freecore-project | 直接消费（truenas frozen） |
+| zettarepl | truenas | 直接消费钉60ade60（13.3 时期）+ DSSKey patch |
+| midcli | truenas | 直接消费钉 5ac8045 |
+| truecommand-stats | truenas(archived) | 直接消费钉 v0.1.8，功能砍Cloud路径 |
+| samba | truenas | 深度 fork（v4-24-stable 含全部分支） |
+| sedutil | upstream ports `security/sedutil` | 不 fork |
+| wsdd | upstream ports `net/py-wsdd` | 不 fork |
+| iocage | 自持有 truenas/icoage fork | 已 ports-extra 化 |
+| libhyve-remote/py-bhyve/py-zettarepl(patch)/scanlnk | — | 删除/不需要 |
