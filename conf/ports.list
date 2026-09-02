@@ -50,10 +50,10 @@ security/pam_mkhomedir
 shells/ksh93
 shells/mksh
 shells/zsh
-sysutils/e2fsprogs
-sysutils/fusefs-libs
-sysutils/fusefs-ntfs
-sysutils/fusefs-s3fs
+filesystems/e2fsprogs
+filesystems/fusefs-libs
+filesystems/ntfs
+filesystems/s3fs
 sysutils/smartmontools
 net/libdnet
 sysutils/xe-guest-utilities
@@ -61,7 +61,6 @@ security/gnupg
 www/apache24
 www/mod_mpm_itk
 sysutils/syslog-ng
-devel/gio-fam-backend
 sysutils/jailme
 graphics/graphite2
 converters/base64
@@ -98,12 +97,11 @@ sysutils/htop
 sysutils/mcelog
 devel/py-xattr
 converters/convmv
-sysutils/ipfs-go
 misc/mmv
 misc/mbuffer
 sysutils/ncdu
 www/novnc
-www/novnc-websockify
+devel/py-websockify
 net/libvncserver
 graphics/drm-kmod
 net/aquantia-atlantic-kmod
@@ -130,7 +128,7 @@ x11-toolkits/pango
 print/harfbuzz
 databases/rrdtool
 net-mgmt/collectd5
-emulators/mtools
+filesystems/mtools
 net/py-python-ldap
 dns/py-dnspython
 devel/dbus
