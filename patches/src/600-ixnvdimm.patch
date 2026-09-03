@@ -97,7 +97,7 @@ new file mode 100644
 index 000000000000..8cbdc760b9f0
 --- /dev/null
 +++ b/sys/dev/ixnvdimm/ixnvdimm.c
-@@ -0,0 +1,2117 @@
+@@ -0,0 +1,2113 @@
 +/*-
 + * Copyright (c) 2016-2020 Alexander Motin <mav@FreeBSD.org>
 + *
@@ -803,7 +803,7 @@ index 000000000000..8cbdc760b9f0
 +	struct pmem_disk *sc = device_get_softc(dev);
 +
 +	disk_destroy(sc->disk);
-+	pmap_unmapdev((vm_offset_t)sc->vaddr, sc->size);
++	pmap_unmapdev(sc->vaddr, sc->size);
 +	if (sc->dma.numch != 0)
 +		pmem_dma_shutdown(dev);
 +	bus_release_resource(dev, SYS_RES_MEMORY, sc->rid, sc->res);
@@ -826,10 +826,9 @@ index 000000000000..8cbdc760b9f0
 +};
 +
 +static devclass_t pmem_devclass;
-+static devclass_t nvdimm_root_devclass;
 +
-+DRIVER_MODULE(pmem, nexus, pmem_driver, pmem_devclass, 0, 0);
-+DRIVER_MODULE(pmem, nvdimm_root, pmem_driver, pmem_devclass, 0, 0);
++DRIVER_MODULE(pmem, nexus, pmem_driver, 0, 0);
++DRIVER_MODULE(pmem, nvdimm_root, pmem_driver, 0, 0);
 +MODULE_DEPEND(pmem, ioat, 1, 1, 1);
 +MODULE_VERSION(ixnvdimm, 1);
 +
@@ -1474,8 +1473,7 @@ index 000000000000..8cbdc760b9f0
 +	sizeof(struct nvdimm_softc),
 +};
 +
-+static devclass_t nvdimm_devclass;
-+DRIVER_MODULE(nvdimm, nvdimm_root, nvdimm_driver, nvdimm_devclass, 0, 0);
++DRIVER_MODULE(nvdimm, nvdimm_root, nvdimm_driver, 0, 0);
 +
 +static char *nvdimm_root_ids[] = { "ACPI0012", NULL };
 +static uint8_t pmem_uuid[ACPI_UUID_LENGTH] = {
@@ -1613,7 +1611,7 @@ index 000000000000..8cbdc760b9f0
 +	struct nvdimm_child	*ivar;
 +	device_t	child;
 +	uint64_t	val;
-+	int		error, sai, san = 0, mmn = 0, crn = 0;
++	int		sai, san = 0, mmn = 0, crn = 0;
 +
 +	/* Search for NFIT table. */
 +	status = AcpiGetTable("NFIT", 0, (ACPI_TABLE_HEADER **)&nfit);
@@ -1686,9 +1684,7 @@ index 000000000000..8cbdc760b9f0
 +			device_printf(dev, "_DSM supported (0x%jx)\n", val);
 +	}
 +
-+	error = bus_generic_attach(dev);
-+	if (error != 0)
-+		device_printf(dev, "bus_generic_attach failed\n");
++	bus_attach_children(dev);
 +
 +	status = AcpiInstallNotifyHandler(acpi_get_handle(dev), ACPI_DEVICE_NOTIFY,
 +	    nvdimm_root_notify, dev);
@@ -1888,7 +1884,7 @@ index 000000000000..8cbdc760b9f0
 +	sizeof(struct nvdimm_root),
 +};
 +
-+DRIVER_MODULE(nvdimm_root, acpi, nvdimm_root_driver, nvdimm_root_devclass, 0, 0);
++DRIVER_MODULE(nvdimm_root, acpi, nvdimm_root_driver, 0, 0);
 +MODULE_DEPEND(nvdimm_root, acpi, 1, 1, 1);
 +
 +static void
@@ -2210,9 +2206,8 @@ index 000000000000..8cbdc760b9f0
 +	sizeof(struct ntb_pmem),
 +};
 +
-+static devclass_t ntb_pmem_devclass;
 +
-+DRIVER_MODULE(ntb_pmem, ntb_hw, ntb_pmem_driver, ntb_pmem_devclass, 0, 0);
++DRIVER_MODULE(ntb_pmem, ntb_hw, ntb_pmem_driver, 0, 0);
 +MODULE_DEPEND(ntb_pmem, ntb, 1, 1, 1);
 +MODULE_VERSION(ntb_pmem, 1);
 diff --git a/sys/dev/ixnvdimm/ixnvdimm.h b/sys/dev/ixnvdimm/ixnvdimm.h
