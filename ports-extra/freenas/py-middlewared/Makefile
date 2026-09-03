@@ -60,7 +60,7 @@ RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}ws4py>0:www/py-ws4py@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}simplejson>0:devel/py-simplejson@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}sqlparse>0:databases/py-sqlparse@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}pycryptodome>0:security/py-pycryptodome@${PY_FLAVOR} \
-		${PYTHON_PKGNAMEPREFIX}openssl>0:security/py-openssl@${PY_FLAVOR} \
+		${PYTHON_PKGNAMEPREFIX}openssl>0:security/py-pyopenssl@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}dnspython>0:dns/py-dnspython@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}sysctl>0:devel/py-sysctl@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}ipaddr>0:devel/py-ipaddr@${PY_FLAVOR} \
@@ -71,9 +71,6 @@ RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}ws4py>0:www/py-ws4py@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}html2text>0:textproc/py-html2text@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}passlib>0:security/py-passlib@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}aws-requests-auth>0:devel/py-aws-requests-auth@${PY_FLAVOR} \
-		freenas-pkgtools>0:freenas/freenas-pkgtools \
-		freenas-migrate93>0:freenas/freenas-migrate93 \
-		freenas-migrate113>0:freenas/freenas-migrate113 \
 		tc-stats>0:freenas/tc-stats \
 		${PYTHON_PKGNAMEPREFIX}iocage>0:sysutils/iocage@${PY_FLAVOR} \
 		git:devel/git@lite \
@@ -82,7 +79,7 @@ RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}ws4py>0:www/py-ws4py@${PY_FLAVOR} \
 		dmidecode>0:sysutils/dmidecode \
 		grub2>0:sysutils/grub2 \
 		grub2-x86_64-efi>0:sysutils/grub2-x86_64-efi \
-		squashfs-tools>0:sysutils/squashfs-tools \
+		squashfs-tools>0:filesystems/squashfs-tools \
 		${PYTHON_PKGNAMEPREFIX}packaging>0:devel/py-packaging@${PY_FLAVOR} \
 		rclone>0:net/rclone \
 		ifstat>0:net/ifstat \

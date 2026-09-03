@@ -15,3 +15,7 @@ ATOMIC_PACKAGE_REPOSITORY=yes
 COMMIT_PACKAGES_ON_FAILURE=no
 KEEP_OLD_PACKAGES=yes
 KEEP_OLD_PACKAGES_COUNT=2
+
+# 私货源码 mount：freenas/py-middlewared 等 port 的 WRKSRC 指向 /usr/nas_source/*
+# （13.3 同款机制；host 侧由 ports.mk nas-source-bind 目标 mount_nullfs 绑定）。
+NULLFS_PATHS="/rescue /usr/share /usr/tests /usr/lib32 /usr/nas_source"

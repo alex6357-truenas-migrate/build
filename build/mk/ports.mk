@@ -10,8 +10,10 @@ POUDRIERE_TREE?=	tn${PORTS_QUARTER}
 POUDRIERE_JAIL_SRC_TAR?=	${OBJS}/jail.txz
 JAIL_ROOT?=	${OBJS}/jail
 
-# 把 ports-extra 合入 work/ports 后（一次性）注册到 poudriere
-${WORK_PORTS}/.build-ports-merged:
+# 把 ports-extra 合入 work/ports 后（一次性）注册到 poudriere；
+# stamp 依赖 ports-extra 全量文件，任一修改即重 merge
+PORTS_EXTRA_FILES!=	find ${EXTRA_PORTS} -type f -not -path '*/.git/*' 2>/dev/null
+${WORK_PORTS}/.build-ports-merged: ${PORTS_EXTRA_FILES}
 	BUILD_ROOT=${BUILD_ROOT} WORK_PORTS=${WORK_PORTS} \
 		sh ${TOOLS_SH}/ports-merge.sh
 	touch ${WORK_PORTS}/.build-ports-merged
@@ -42,8 +44,17 @@ skeleton-jail: world
 		DESTDIR=${JAIL_ROOT} SRCCONF=${SRC_MAKE_CONF:Q} \
 		installworld distribution
 
+# nas_source 绑定：freenas/py-middlewared 等 port 的 WRKSRC=/usr/nas_source/<repo>
+# host 侧把 work/<repo> 以 nullfs(ro) 绑进 /usr/nas_source/<repo>，
+# poudriere 经 NULLFS_PATHS 传入 jail（13.3 core-build 同款目录协定）。
+nas-source-bind:
+	mkdir -p /usr/nas_source
+	[ -d /usr/nas_source/middlewared ] || mkdir /usr/nas_source/middlewared
+	mount | grep -q " on /usr/nas_source/middlewared " || \
+		mount_nullfs -o ro ${WORK_ROOT}/middleware /usr/nas_source/middlewared
+
 # 批量构建全部 port
-ports-bulk: poudriere-setup
+ports-bulk: nas-source-bind poudriere-setup
 	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere bulk -w -J ${MAKE_JOBS} \
 		-j ${POUDRIERE_JAIL} -p ${POUDRIERE_TREE} \
 		-f ${CONF}/ports.list
