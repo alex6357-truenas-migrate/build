@@ -17,7 +17,7 @@ WRKSRC=		/usr/nas_source/py-bsd
 
 USES=		python cython
 USE_PYTHON=	autoplist pep517
-BUILD_DEPENDS=	${PYTHON_PKGNAMEPREFIX}cython>0:devel/py-cython@${PY_FLAVOR} \
+BUILD_DEPENDS=	cython>0:lang/cython \
 	${PYTHON_PKGNAMEPREFIX}setuptools>0:devel/py-setuptools@${PY_FLAVOR} \
 	${PYTHON_PKGNAMEPREFIX}wheel>0:devel/py-wheel@${PY_FLAVOR}
 
