@@ -3,8 +3,9 @@
 # 依赖 poudriere（ports-mgmt/poudriere 或 poudriere-devel；后者非必需）。
 
 POUDRIERE_ETC?=	${OBJS}/poudriere/etc
-# jail/树名跟随 FREEBSD_BRANCH（releng/15.1 → build-15.1-tn2026Q3）
-POUDRIERE_JAIL?=	build-${FREEBSD_BRANCH:C,.*/,,}
+# jail/树名跟随 FREEBSD_BRANCH（releng/15.1 → build-151-tn2026Q3；
+# poudriere 禁止 jail 名含 '.'，去小数点）
+POUDRIERE_JAIL?=	build-${FREEBSD_BRANCH:C,.*/,,:S,.,,g}
 POUDRIERE_TREE?=	tn${PORTS_QUARTER}
 POUDRIERE_JAIL_SRC_TAR?=	${OBJS}/jail.txz
 JAIL_ROOT?=	${OBJS}/jail
