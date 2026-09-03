@@ -115,7 +115,8 @@ freebsd-src 的测试 worktree（origin 指 git.freebsd.org，**不要推送**�
       正确名在 ports-extra / sysutils）—构建前必须核对
 
 ### 构建前一批
-- [ ] webui-dist 工件：跑 `sh/webui-dist-pack.sh` 产出 dist tarball + distinfo
+- [x] webui-dist 工件：已在 podman(node:16-buster,+npmmirror registry) 构建成功
+      （ng build 162s），83MB tarball + distinfo 已提交 ports-extra/freenas/webui-dist
 - [ ] freenas-installer install.sh L1068 `freenas-install` → pkg-static -r 改写
 - [ ] sedutil port 去留决策
 - [ ] iocage fork 长期上游化（不阻塞）
@@ -145,6 +146,36 @@ make release                      # world/kernel pkgbase + poudriere + 镜像
 - 版本锚点：改 `conf/freebsd.mk` + `repos.conf` 两个 pin 即可追下一版
 - 本地 scratch 报告（F:\zvault\_scratch\compat-*.md 等 9 份）**不在任何 git
   仓库里**，若机器损毁需重做分析（关键结论已浓缩进本文 §5）
+
+## 7.5 VM 首测记录（2026-09-02/03，root@169.254.1.1，FreeBSD 15.1-RELEASE）
+
+环境：VM 20c/16G/193G,ZFS。/usr/src、/usr/ports 为用户手工 `--depth 1` 分支头
+克隆（非组织镜像），build repo 从 org 拉起，symbolic link 进 `work/`。
+
+已完成阶段与修正：
+
+1. `make setup` 通过（13 个 pkg 仓库全部就位）。修正：
+   - repos.conf src/ports pin 重指 releng/15.1@88e7371d9 / 2026Q3@56ce79b76
+     （用户 VM 种子均为现 TIP）;
+   - py-netif pin 由 7 位短 sha 补全 40 位（repo-sync 按分支名处理 short sha 致 clone 失败）;
+   - samba pin 4fec43c0 原在 `stable/dragonfish`（org 无此分支）——已推支
+     `truenas/v4-19-stable` 至 org;
+   - middleware py-middlewared port 的 grub2 依赖错指 filesystems/，
+     改回 ports-extra 真实分类 sysutils/grub2{,-x86_64-efi};
+   - ports.list 删除 dns/samba-nsupdate（2026Q3 上游已除）漏网条目。
+2. `make patches` 通过：12 个 src 补丁全部 am 上 releng/15.1 TIP; ports 侧
+   MOVED 补丁重生成（仅摘 www/py-ws4py + net/py-netif 过期记录）,
+   同时删除三个过时 ports 补丁（default-versions NODEJS18 / gem-skip-subdir /
+   python-mk-crypto-legacy，理由见 patches/ports/README.md）。
+3. `make world` 通过（6772s / -j20）。修正：common.mk 曾 `.export OBJS` →
+   环境变量渗入 src 子 make,15.1 bsd.dep.mk 新守卫 `$OBJS absolute path not
+   allowed` 判定非法 → 已取消导出。
+4. `make kernel` 进行中。修正：TRUENAS 配置注释 esp/amr/iir/twa（15 移除）;
+   TRUENAS-DEBUG 继承 TRUENAS 无需改。
+5. webui-dist 工件完成（见上一节）。
+
+待继续：`make kernel` 结束后 `make ports`（poudriere 首跑，ports-extra 的
+~40 个 port 逐个与 2026Q3 过招——预计主要战场）。
 
 ## 8. 已知风险
 
