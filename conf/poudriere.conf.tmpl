@@ -18,4 +18,6 @@ KEEP_OLD_PACKAGES_COUNT=2
 
 # 私货源码 mount：freenas/py-middlewared 等 port 的 WRKSRC 指向 /usr/nas_source/*
 # （13.3 同款机制；host 侧由 ports.mk nas-source-bind 目标 mount_nullfs 绑定）。
-NULLFS_PATHS="/rescue /usr/share /usr/tests /usr/lib32 /usr/nas_source"
+# /usr/src 一道挂：kmod 类 ports（如 filesystems/openzfs-kmod）需在 jail 里
+# 看见内核源码。注意我们 VM 上 /usr/src 就是打过补丁的 work/src 本体。
+NULLFS_PATHS="/rescue /usr/share /usr/tests /usr/lib32 /usr/nas_source /usr/src"
