@@ -132,9 +132,9 @@ NSUPDATE_DESC=			Use samba NSUPDATE utility for AD DC
 PLIST_SUB+=			CLUSTER="@comment "
 SUB_LIST+=			CLUSTER="@comment "
 # Needs ZFS to build, if not built in base we'll bring in ZoL
-.if !exists(/sbin/zpool)
-BUILD_DEPENDS+=			openzfs>=0:sysutils/openzfs
-.endif
+# 15.1 决策：用 base OpenZFS 2.4.2，不再依赖 sysutils/openzfs（2026Q3 已迁
+# filesystems/openzfs 且与本构建无关）；头文件走 jail base + wscript %%SRC_BASE%%。
+# 若未来定位到 base 无 ZFS 的构建形态再恢复条件分支。
 # XXX: Unconditional dependencies which can't be switched off(if present in the system)
 # popt
 LIB_DEPENDS+=			libpopt.so:devel/popt
