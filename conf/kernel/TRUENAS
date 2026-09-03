@@ -390,9 +390,11 @@ device		kvm_clock		# KVM paravirtual clock driver
 device		hyperv			# HyperV drivers 
 
 # Xen HVM Guest Optimizations
-# NOTE: XENHVM depends on xenpci.  They must be added or removed together.
+# NOTE: XENHVM depends on xenpci and xentimer (15.1 GENERIC 注释更新；缺 xentimer
+# 导致 ld undefined xen_clock_init/xen_delay)。
 options 	XENHVM			# Xen HVM kernel infrastructure
 device		xenpci			# Xen HVM Hypervisor services driver
+device		xentimer		# Xen HVM timer (xenclock) — 15.1 新增必须
 
 # Netmap provides direct access to TX/RX rings on supported NICs
 #device		netmap			# netmap(4) support
