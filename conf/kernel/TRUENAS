@@ -144,7 +144,8 @@ device		siis			# SiliconImage SiI3124/SiI3132/SiI3531 SATA
 # SCSI Controllers
 device		ahc			# AHA2940 and onboard AIC7xxx devices
 device		ahd			# AHA39320/29320 and onboard AIC79xx devices
-device		esp			# AMD Am53C974 (Tekram DC-390(T))
+# esp/amr/iir/twa 已在 FreeBSD 15 移除（随 13.3 时代内核配置一并淘汰）
+#device		esp			# AMD Am53C974 (Tekram DC-390(T))
 device		hptiop			# Highpoint RocketRaid 3xxx series
 device		isp			# Qlogic family
 #device		ispfw			# Firmware for QLogic HBAs- normally a module
@@ -167,13 +168,13 @@ device		ses			# Enclosure Services (SES and SAF-TE)
 #device		ctl			# CAM Target Layer
 
 # RAID controllers interfaced to the SCSI subsystem
-device		amr			# AMI MegaRAID
+#device		amr			# AMI MegaRAID (removed in FreeBSD 15)
 device		arcmsr			# Areca SATA II RAID
 device		ciss			# Compaq Smart RAID 5*
-device		iir			# Intel Integrated RAID
+#device		iir			# Intel Integrated RAID (removed in FreeBSD 15)
 device		ips			# IBM (Adaptec) ServeRAID
 #device		mly			# Mylex AcceleRAID/eXtremeRAID
-device		twa			# 3ware 9000 series PATA/SATA RAID
+#device		twa			# 3ware 9000 series PATA/SATA RAID (removed in FreeBSD 15)
 device		smartpqi		# Microsemi smartpqi driver
 device		tws			# LSI 3ware 9750 SATA+SAS 6Gb/s RAID controller
 
