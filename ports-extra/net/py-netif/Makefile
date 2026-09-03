@@ -9,7 +9,8 @@ WWW=		https://github.com/truenas/py-netif
 
 LICENSE=	BSD2CLAUSE
 
-RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}bsd>0:devel/py-bsd@${PY_FLAVOR}
+# 上游 devel/py-bsd 已过期删除（2025-12）；同名包由 ports-extra/freenas/py-bsd 供给
+RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}bsd>0:freenas/py-bsd@${PY_FLAVOR}
 
 USES=		python
 USE_GITHUB=	yes
