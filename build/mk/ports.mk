@@ -27,8 +27,12 @@ poudriere-setup: ${WORK_PORTS}/.build-ports-merged ${POUDRIERE_JAIL_SRC_TAR}
 	mkdir -p ${POUDRIERE_ETC} ${POUDRIERE_ETC}/poudriere.d
 	sed 's|@@BASEFS@@|${POUDRIERE_BASE}|g' ${CONF}/poudriere.conf.tmpl > ${POUDRIERE_ETC}/poudriere.conf
 	cp ${CONF}/pkg-make.conf ${POUDRIERE_ETC}/poudriere.d/make.conf
-	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere ports -c -p ${POUDRIERE_TREE} -m none -M ${WORK_PORTS}
-	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere jail -c -j ${POUDRIERE_JAIL} -v ${FREEBSD_REL_VER} \
+	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere ports -l -q 2>/dev/null | \
+		awk '{print $$1}' | grep -qx ${POUDRIERE_TREE} || \
+		POUDRIERE_ETC=${POUDRIERE_ETC} poudriere ports -c -p ${POUDRIERE_TREE} -m none -M ${WORK_PORTS}
+	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere jail -l -q 2>/dev/null | \
+		awk '{print $$1}' | grep -qx ${POUDRIERE_JAIL} || \
+		POUDRIERE_ETC=${POUDRIERE_ETC} poudriere jail -c -j ${POUDRIERE_JAIL} -v ${FREEBSD_REL_VER} \
 		-a ${MACHINE_ARCH} -m tar=${POUDRIERE_JAIL_SRC_TAR}
 
 # skeleton-jail 分解：仅做 world 安装（不含 kernel，对应 core-build make-conf-jail）
