@@ -48,11 +48,16 @@ skeleton-jail: world
 # host 侧把 work/<repo> 以 nullfs(ro) 绑进 /usr/nas_source/<repo>，
 # poudriere 经 NULLFS_PATHS 传入 jail（13.3 core-build 同款目录协定）。
 nas-source-bind:
-	mkdir -p /usr/nas_source/py-bsd /usr/nas_source/py-licenselib
-	mount | grep -q " on /usr/nas_source " || \
-		mount_nullfs -o ro ${WORK_ROOT}/middleware/src /usr/nas_source
+	mkdir -p /usr/nas_source
+	for d in $$(cd ${WORK_ROOT}/middleware/src && ls); do \
+		[ -d /usr/nas_source/$$d ] || mkdir /usr/nas_source/$$d; \
+		mount | grep -q " on /usr/nas_source/$$d " || \
+			mount_nullfs -o ro ${WORK_ROOT}/middleware/src/$$d /usr/nas_source/$$d; \
+	done
+	[ -d /usr/nas_source/py-bsd ] || mkdir /usr/nas_source/py-bsd
 	mount | grep -q " on /usr/nas_source/py-bsd " || \
 		mount_nullfs -o ro ${WORK_ROOT}/py-bsd /usr/nas_source/py-bsd
+	[ -d /usr/nas_source/py-licenselib ] || mkdir /usr/nas_source/py-licenselib
 	mount | grep -q " on /usr/nas_source/py-licenselib " || \
 		mount_nullfs -o ro ${WORK_ROOT}/licenselib /usr/nas_source/py-licenselib
 
