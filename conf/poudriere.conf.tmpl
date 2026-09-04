@@ -8,7 +8,7 @@ USE_TMPFS=yes
 DISTFILES_CACHE=@@BASEFS@@/distfiles
 PKG_REPO_FROM_HOST=yes
 CCACHE_DIR=
-ALLOW_NETWORK_ACCESS=		# 默认空：poudriere 环境断网；依赖 distcache 或 PRE_FETCH 钩子
+ALLOW_NETWORK_ACCESS=all	# 首跑放行网络（dist 预不全会 fail:fetch）；稳定后可收紧
 CHECK_CHANGED_OPTIONS=yes
 CHECK_CHANGED_DEPS=yes
 ATOMIC_PACKAGE_REPOSITORY=yes
@@ -20,4 +20,5 @@ KEEP_OLD_PACKAGES_COUNT=2
 # （13.3 同款机制；host 侧由 ports.mk nas-source-bind 目标 mount_nullfs 绑定）。
 # /usr/src 一道挂：kmod 类 ports（如 filesystems/openzfs-kmod）需在 jail 里
 # 看见内核源码。注意我们 VM 上 /usr/src 就是打过补丁的 work/src 本体。
-NULLFS_PATHS="/rescue /usr/share /usr/tests /usr/lib32 /usr/nas_source /usr/src"
+# nullfs 不透传嵌套 mount,每个子目录单独列;@@NAS_NULLFS@@ 由 ports.mk 展开。
+NULLFS_PATHS="/rescue /usr/share /usr/tests /usr/lib32 @@NAS_NULLFS@@ /usr/src"

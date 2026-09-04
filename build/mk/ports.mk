@@ -27,7 +27,12 @@ POUDRIERE_BASE?=	${OBJS}/poudriere
 # 生成 poudriere 环境（etc 根 + make.conf + 树 + jail 注册）
 poudriere-setup: ${WORK_PORTS}/.build-ports-merged ${POUDRIERE_JAIL_SRC_TAR}
 	mkdir -p ${POUDRIERE_ETC} ${POUDRIERE_ETC}/poudriere.d
-	sed 's|@@BASEFS@@|${POUDRIERE_BASE}|g' ${CONF}/poudriere.conf.tmpl > ${POUDRIERE_ETC}/poudriere.conf
+	_nas_nullfs=$$(cd ${WORK_ROOT}/middleware/src && ls) && \
+	_nas_nullfs=$$(for d in $$_nas_nullfs; do printf '/usr/nas_source/%s ' "$$d"; done; \
+		printf '/usr/nas_source/py-bsd /usr/nas_source/py-licenselib') && \
+	sed -e 's|@@BASEFS@@|${POUDRIERE_BASE}|g' \
+	    -e "s|@@NAS_NULLFS@@|$$_nas_nullfs|g" \
+	    ${CONF}/poudriere.conf.tmpl > ${POUDRIERE_ETC}/poudriere.conf
 	cp ${CONF}/pkg-make.conf ${POUDRIERE_ETC}/poudriere.d/make.conf
 	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere ports -l -q 2>/dev/null | \
 		awk '{print $$1}' | grep -qx ${POUDRIERE_TREE} || \

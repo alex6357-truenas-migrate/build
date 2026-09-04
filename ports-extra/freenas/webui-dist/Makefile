@@ -34,8 +34,13 @@ DISTFILES=	${EXTRA_DIST_SEED:T}
 
 do-install:
 	mkdir -p ${STAGEDIR}${PREFIX}/www/webui
+	# webui-dist-pack.sh 打出来的 tar 顶层是 dist/ 目录，展平到 www/webui 根
 	( umask 022 && cd ${STAGEDIR}${PREFIX}/www/webui && \
-	  ${EXTRACT_CMD} ${EXTRACT_BEFORE_ARGS} ${DISTDIR}/${DISTFILES} ${EXTRACT_AFTER_ARGS} )
+	  ${EXTRACT_CMD} ${EXTRACT_BEFORE_ARGS} ${DISTDIR}/${DISTFILES} ${EXTRACT_AFTER_ARGS} && \
+	  if [ -d dist ]; then \
+	    ( cd dist && tar -cf - . ) | tar -xf - && rm -rf dist; \
+	  fi )
+	mkdir -p ${STAGEDIR}${PREFIX}/www/webui/assets
 	date -u +%s > ${STAGEDIR}${PREFIX}/www/webui/assets/buildtime
 	( cd ${STAGEDIR}${PREFIX}/www/webui; ${FIND} . -type f \
 		| ${SED} -e 's,^\./,,g' \

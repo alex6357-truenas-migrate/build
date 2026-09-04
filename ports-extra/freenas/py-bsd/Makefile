@@ -15,7 +15,7 @@ COMMENT=	Python wrappers for various BSD interfaces
 # 构建期源码位置（由 build/ports』skeleton-jail 副载）
 WRKSRC=		/usr/nas_source/py-bsd
 
-USES=		python cython
+USES=		python
 USE_PYTHON=	autoplist pep517
 BUILD_DEPENDS=	cython>0:lang/cython \
 	${PYTHON_PKGNAMEPREFIX}setuptools>0:devel/py-setuptools@${PY_FLAVOR} \
