@@ -101,25 +101,33 @@ freebsd-src 的测试 worktree（origin 指 git.freebsd.org，**不要推送**�
 
 ## 6. 待办（VM 构建测试前 / 中优先级顺序）
 
-### P3-M2 middleware pkgbase 化（下一阶段主线，未动工的实质代码）
-- [ ] `update_*` plugins + `alert/source/update.py` + `utils/osc/freebsd/app.py`
-      + alembic env + pytest helpers：freenasOS import 全部换成 pkg 实现
-      （替换规格表已拟出但**还没写成文档/代码**；freenasOS 触及面：
-      install_freebsd.py、download_freebsd.py、pending_freebsd.py、
-      trains_freebsd.py 已盘点）
-- [ ] bootenv 插件 beadm → bectl
-- [ ] py-middlewared port：USE_PYTHON distutils → pep517；BUILD_DEPENDS
-      fastentrypoints 删掉（py3.12 不兼容）
-- [ ] **复核 grub2 分类改名**：py-middlewared port 里 grub2/x86_64-efi 改成
-      filesystems/ 可能是错误 rename（上游 ports 无 filesystems/grub2；
-      正确名在 ports-extra / sysutils）—构建前必须核对
+### P3-M2 middleware pkgbase 化（下一阶段主线；部分已动）
 
-### 构建前一批
-- [x] webui-dist 工件：已在 podman(node:16-buster,+npmmirror registry) 构建成功
-      （ng build 162s），83MB tarball + distinfo 已提交 ports-extra/freenas/webui-dist
+- [x] `osc/freebsd/app.py` 去 freenasOS.Configuration — 读 /etc/version*
+      + /etc/version.train + /etc/version.buildtime（build 镜像期注入）
+      commit `middleware@f7740e77e3`)
+- [x] py-middlewared port：USE_PYTHON distutils → pep517；BUILD_DEPENDS
+      fastentrypoints 删（py3.12 distutils 移除）+ 添 setuptools/wheel;补充
+      `src/middlewared/pyproject.toml` (build-system 表）
+      commit `middleware@20f1e56767`)
+- [x] 分类修复 commit `middleware@83ff7e21bd` / `a22977d239`:pkgtools/
+      migrate93/migrate113/grub2(sysutils)/squashfs(filesystems)/py-pyopenssl
+- [ ] `update_/download_freebsd|install_freebsd|pending_freebsd|trains_freebsd.py`
+      pkgbase 化：复用 `pkg update/upgrade -r <repo>` + `--dry-run --json` pending
+      表 + `pkg upgrade --fetch-only`下载;`pkg update -r` 走 repo.conf 配置替换
+      trains.xml;`Update.ListClones` (`alert/source/update.py`) 换 bectl json
+      枚举 - **等 VM 回来能跑 middlewared 之后再写，当前先停手**
+- [ ] bootenv 插件 beadm → bectl（集中影响 osc 层 + plugin.bootenv）
 - [ ] freenas-installer install.sh L1068 `freenas-install` → pkg-static -r 改写
-- [ ] sedutil port 去留决策
-- [ ] iocage fork 长期上游化（不阻塞）
+- [ ] sedutil 去留 / iocage fork 长期上游化（不阻塞）
+
+### 构建前一批（已落地的构件）
+- [x] webui-dist 工件：podman(node:16-buster,+npmmirror registry) 构建成功
+      （ng build 162s），83MB tarball + distinfo 已提交 ports-extra/freenas/webui-dist
+
+### runtime/下一步（与上面 P3-M2 并行）
+- [ ] freenas-installer install.sh L1068 `freenas-install` → pkg-static -r 改写
+- [ ] sedutil 去留 / iocage fork 长期上游化（不阻塞）
 
 ### 验证
 - [ ] 在 VM 上跑 `make setup patches release` 全链路（pkgbase world/kernel +
@@ -148,6 +156,14 @@ make release                      # world/kernel pkgbase + poudriere + 镜像
   仓库里**，若机器损毁需重做分析（关键结论已浓缩进本文 §5）
 
 ## 7.5 VM 首测记录（2026-09-02/03，root@169.254.1.1，FreeBSD 15.1-RELEASE）
+
+**断点续接须知**：2026-09-04 凌晨 VM 失联（poudriere bulk 高负载后，TCP/SSH 超时，
+可能 OOM）。恢复后只需：
+
+1. 确认 build repo 拉到 `c430d43`（jail 烤 sys/ + NULLFS 修正）。
+2. `rm -f objs/jail.txz && poudriere jail -d -j build-151`（用旧 jail 不含新 sys/）。
+3. `cd /root/nas-build/build && make ports`（KEEP_OLD_PACKAGES，直接续）。
+4. 再 ``make packages images release``（包终产物）。
 
 环境：VM 20c/16G/193G,ZFS。/usr/src、/usr/ports 为用户手工 `--depth 1` 分支头
 克隆（非组织镜像），build repo 从 org 拉起，symbolic link 进 `work/`。
