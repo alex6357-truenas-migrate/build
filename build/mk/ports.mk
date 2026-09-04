@@ -48,6 +48,12 @@ skeleton-jail: world
 	${BUILD_ENV} ${MAKE} -C ${WORK_SRC} \
 		DESTDIR=${JAIL_ROOT} SRCCONF=${SRC_MAKE_CONF:Q} \
 		installworld distribution
+	# kmod 类 ports（drm-kmod/open-vm-kmod/gpu-fw）构建要读 jail 内 /usr/src：
+	# poudriere NULLFS 直挂 host src 在 15.1 会 EDEADLK（P4 实测），
+	# 改为把打了补丁的 sys 树复制进 jail 镜像（273MB，可接受）。
+	mkdir -p ${JAIL_ROOT}/usr/src
+	rm -rf ${JAIL_ROOT}/usr/src/sys
+	cp -Rp ${WORK_SRC}/sys ${JAIL_ROOT}/usr/src/sys
 
 # nas_source 绑定：freenas/py-middlewared 等 port 的 WRKSRC=/usr/nas_source/<repo>
 # host 侧把 work/<repo> 以 nullfs(ro) 绑进 /usr/nas_source/<repo>，

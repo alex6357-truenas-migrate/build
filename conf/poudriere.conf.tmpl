@@ -2,6 +2,7 @@
 # 占位符 @@BASEFS@@ 由 mk/ports.mk 的 poudriere-setup 替换。
 
 NO_ZFS=yes
+ZPOOL=zroot
 BASEFS=@@BASEFS@@
 USE_PORTLINT=no
 USE_TMPFS=yes
@@ -21,4 +22,5 @@ KEEP_OLD_PACKAGES_COUNT=2
 # /usr/src 一道挂：kmod 类 ports（如 filesystems/openzfs-kmod）需在 jail 里
 # 看见内核源码。注意我们 VM 上 /usr/src 就是打过补丁的 work/src 本体。
 # nullfs 不透传嵌套 mount,每个子目录单独列;@@NAS_NULLFS@@ 由 ports.mk 展开。
-NULLFS_PATHS="/rescue /usr/share /usr/tests /usr/lib32 @@NAS_NULLFS@@ /usr/src"
+# 注: /usr/src 不走 NULLFS——15.1 实测进 ref jail 报 EDEADLK;改为拷入 jail.txz
+NULLFS_PATHS="/rescue /usr/share /usr/tests /usr/lib32 @@NAS_NULLFS@@"
