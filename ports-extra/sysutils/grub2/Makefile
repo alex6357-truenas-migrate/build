@@ -10,6 +10,9 @@ DISTNAME=	grub-${PORTVERSION}
 USE_GITHUB=	yes
 GH_ACCOUNT=	rhboot
 GH_TAGNAME=	e7b8856f8be3292afdb38d2e8c70ad8d62a61e10
+# 15.1：./bootstrap 要 gnulib;git.sv.gnu.org git:// 穿不出 poudriere;
+# coreutils/gnulib GitHub mirror 限定成静态快照（钉 sha）+ GNULIB_SRCDIR
+GH_TUPLE=	coreutils:gnulib:331c8d065a8a753de71f084f068473ccd5e4c34a:gnulib/gnulib
 
 MAINTAINER=	ports@FreeBSD.org
 COMMENT=	Multiboot boot loader
@@ -38,7 +41,7 @@ CPE_PRODUCT=	grub
 CPE_VENDOR=	gnu
 
 CONFIGURE_ARGS=	--disable-werror --localedir=${PREFIX}/share/locale
-CONFIGURE_ENV=	CPP="${CC} -E"
+CONFIGURE_ENV=	CPP="${CC} -E" GNULIB_SRCDIR="${WRKSRC}/gnulib"
 
 OPTIONS_DEFINE=	MKFONT FUSE
 OPTIONS_SUB=	yes
