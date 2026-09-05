@@ -13,7 +13,7 @@ LICENSE=	GPLv2
 LIB_DEPENDS=libconfuse.so:devel/libconfuse \
 			libgnutls.so:security/gnutls
 
-PLIST_FILES=man/man8/inadyn.8.gz \
+PLIST_FILES=share/man/man8/inadyn.8.gz \
 			man/man5/inadyn.conf.5.gz \
 			share/doc/inadyn/COPYING \
 			share/doc/inadyn/ChangeLog.md \
