@@ -71,6 +71,8 @@ post-patch:
 		${WRKSRC}/util/bash-completion.d/grub-completion.bash.in
 
 pre-configure:
+	# gnulib-tool.py(py 版)强制 AC_PREREQ>=2.64,本快照是 2.63,先改写再 bootstrap
+	${REINPLACE_CMD} -e 's/^AC_PREREQ(2\.[0-9]*)/AC_PREREQ([2.73])/' ${WRKSRC}/configure.ac
 	cd ${WRKSRC} && ./bootstrap
 	sed -i.bak  '23s/.*/typedef uint64_t u64;/' ${WRKSRC}/grub-core/lib/libgcrypt-grub/src/types.h
 
