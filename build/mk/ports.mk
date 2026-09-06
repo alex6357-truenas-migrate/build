@@ -34,17 +34,18 @@ poudriere-setup: ${WORK_PORTS}/.build-ports-merged ${POUDRIERE_JAIL_SRC_TAR}
 	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere ports -l -q 2>/dev/null | \
 		awk '{print $$1}' | grep -qx ${POUDRIERE_TREE} || \
 		POUDRIERE_ETC=${POUDRIERE_ETC} poudriere ports -c -p ${POUDRIERE_TREE} -m none -M ${WORK_PORTS}
+	# jail 已存且 txz 更新过(txz 由 skeleton-jail 每次重烤)就重建 jail;
+	# 注意 poudriere 的 jail -u 对 -m tar 方式不支持(round16 实测报错),
+	# 只能 -d 后 -c。stamp 落在 jail 目录里,jail -d 连 stamp 一起清,
+	# 新建 jail 不会触发重建分支。
+	_stamp=${POUDRIERE_BASE}/jails/${POUDRIERE_JAIL}/.build-txz-stamp; \
+	if [ -f "$$_stamp" ] && [ "${POUDRIERE_JAIL_SRC_TAR}" -nt "$$_stamp" ]; then \
+		POUDRIERE_ETC=${POUDRIERE_ETC} poudriere jail -d -j ${POUDRIERE_JAIL} -y; \
+	fi; \
 	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere jail -l -q 2>/dev/null | \
 		awk '{print $$1}' | grep -qx ${POUDRIERE_JAIL} || \
 		POUDRIERE_ETC=${POUDRIERE_ETC} poudriere jail -c -j ${POUDRIERE_JAIL} -v ${FREEBSD_REL_VER} \
-		-a ${MACHINE_ARCH} -m tar=${POUDRIERE_JAIL_SRC_TAR}
-	# jail 已存且 txz 更新过(txz 由 skeleton-jail 每次重烤)就增量更新 jail,
-	# 否则 jail 会带着旧镜像一直跑(round14 py-libzfs 找不到 libzfs 的实测坑);
-	# stamp 落在 jail 目录里,jail -d 连 stamp 一起清,保证新 jail 不重走 -u。
-	_stamp=${POUDRIERE_BASE}/jails/${POUDRIERE_JAIL}/.build-txz-stamp; \
-	if [ -f "$$_stamp" ] && [ "${POUDRIERE_JAIL_SRC_TAR}" -nt "$$_stamp" ]; then \
-		POUDRIERE_ETC=${POUDRIERE_ETC} poudriere jail -u -j ${POUDRIERE_JAIL}; \
-	fi; \
+		-a ${MACHINE_ARCH} -m tar=${POUDRIERE_JAIL_SRC_TAR}; \
 	touch "$$_stamp"
 
 # skeleton-jail 分解：仅做 world 安装（不含 kernel，对应 core-build make-conf-jail）
