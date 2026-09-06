@@ -12,7 +12,7 @@ GH_ACCOUNT=	rhboot
 GH_PROJECT=	grub2
 GH_TAGNAME=	e7b8856f8be3292afdb38d2e8c70ad8d62a61e10
 # 15.1：./bootstrap 要 gnulib;git.sv.gnu.org git:// 穿不出 poudriere;钉定 GH_TUPLE
-GH_TUPLE=	coreutils:gnulib:331c8d065a8a753de71f084f068473ccd5e4c34a:gnulib/gnulib
+GH_TUPLE=	coreutils:gnulib:d271f868a8df9bbec29049d01e056481b7a1a263:gnulib/gnulib
 
 MAINTAINER=	ports@FreeBSD.org
 COMMENT=	Multiboot boot loader
