@@ -157,13 +157,19 @@ make release                      # world/kernel pkgbase + poudriere + 镜像
 
 ## 7.5 VM 首测记录（2026-09-02/03，root@169.254.1.1，FreeBSD 15.1-RELEASE）
 
-**断点续接须知**：2026-09-04 凌晨 VM 失联（poudriere bulk 高负载后，TCP/SSH 超时，
-可能 OOM）。恢复后只需：
+**断点续接须知**（2026-09-06 round 14 在跑后更新）：
 
-1. 确认 build repo 拉到 `c430d43`（jail 烤 sys/ + NULLFS 修正）。
-2. `rm -f objs/jail.txz && poudriere jail -d -j build-151`（用旧 jail 不含新 sys/）。
-3. `cd /root/nas-build/build && make ports`（KEEP_OLD_PACKAGES，直接续）。
-4. 再 ``make packages images release``（包终产物）。
+1. build repo 拉到 `19e56b3`（round14 前修批）。
+2. VM 上手工动过的非 git 状态：16G zvol swap（重启不持久）、
+   work/ports/MOVED 手工 sed 剥了 py-libzfs 行（=MOVED patch 新内容),
+   旧 build-151 jail 已 `poudriere jail -d`(让新 jail.txz 带 nas_source+ZFS 库)。
+3. 若在 ports 阶段：`cd /root/nas-build/build && make ports` 直接续
+   （jail 已在、poudriere repo 本轮起 COMMIT_PACKAGES_ON_FAILURE=yes 有继承）。
+4. 全链：`make world kernel world-install && make ports && make packages images release`。
+
+历史说明（原条目，归档）：2026-09-04 凌晨 VM 失联（poudriere bulk 高负载后，
+TCP/SSH 超时，可能 OOM）。当时恢复路径为 c430d43 + rm jail.txz——此方案已被
+round 13 的 nas_source 拷入镜像方案取代，见下方 round 12/13 记录。
 
 环境：VM 20c/16G/193G,ZFS。/usr/src、/usr/ports 为用户手工 `--depth 1` 分支头
 克隆（非组织镜像），build repo 从 org 拉起，symbolic link 进 `work/`。
@@ -192,6 +198,44 @@ make release                      # world/kernel pkgbase + poudriere + 镜像
 
 待继续：`make kernel` 结束后 `make ports`（poudriere 首跑，ports-extra 的
 ~40 个 port 逐个与 2026Q3 过招——预计主要战场）。
+
+### 7.5.1 ports 13 轮迭查（2026-09-05/06）
+
+round 8-11 消了 jexec/挂载系死题（host 侧 /usr/nas_source mask、tensor MOVED）。
+round 12 记录出 ports-extra 连环秒挂十六件；round 13 仍十三件，根因归组如下：
+
+- **nas_source 在 jail 里是空目录**（arcsas/freenas-installer/pipewatcher/
+  py-bsd/py-licenselib 五连秒挂的根因）：poudriere 的 persist ref jail
+  （build-151-tn2026Q3,-n）创建初期 host /usr/nas_source/* 子挂载未就绪，
+  nullfs 捕获了空 vnode；此后 host 侧 nas-source-bind 无论怎么再绑，
+  ref 的旧挂载不变，builder 全部继承空。**修法：不再走 NULLFS_PATHS**,
+  skeleton-jail 直接把 middleware/src/* + py-bsd + licenselib 拷进 jail
+  镜像（ports.mk；poudriere.conf.tmpl NULLFS_PATHS 里不再出现 nas_source）。
+- **grub2 ×2 fetch 秒挂**：GH_TUPLE gnulib 没在 distinfo 留账;codeload
+  快照 sha256 在 Windows 侧自拉自算后补进两个 distinfo。
+- **MOVED 把复活的 devel/py-libzfs 重导到上游 filesystems/py-libzfs**
+  （py-libzfs 2.0.1, cython 3 现网编不过）:MOVED-unexpire-fork.patch 补剥
+  `devel/py-libzfs|filesystems/py-libzfs|2024-11-06`（VM 上同步 sed
+  免 repatch 树）。
+- **自版 devel/py-libzfs(1.0.20240508,master 钉 faa4cbf)build 挂**:cython3
+  弃 py2 内建 - `nvpair.pxi` long/unicode。org py-libzfs 提交 885a0822 修复
+  （注意 master 是移动目标，此后 pin 即用该 sha）。
+- **configure 全 NOT FOUND**：追查 config.log 是 `ld: unable to find
+  -lzutil -lzfs -lnvpair -lzfs_core -luutil`——jail/world 居然没有 ZFS 库。
+  根因：`conf/src.conf.build` 写过 `WITHOUT_ZFS=no`(src.conf(5)：
+  WITHOUT_* 只认"是否定义",值被忽略）,world 和 NAS 镜像本身都被无 ZFS
+  构建过。删行后须重建 world。
+- **node24 build was "Killed"**：OOM(-J20 + USE_TMPFS=yes + 单 port 内部
+  -j20 + -g 调式包袱)。措施：USE_TMPFS=no、pkg-make.conf 去掉 -g
+  （DEBUG_FLAGS/CFLAGS 注释）、MAKE_JOBS_NUMBER_LIMIT=8、Ports.mk 新增
+  POUDRIERE_MAX_JOBS=10（不再 MAKE_JOBS=20 拉满）、VM 上 zvol 16G swap。
+- **lang/rust build 挂**:bootstrap dist 内部 cargo --frozen 链尾挂（表层
+  RuntimeError,stderr 被吞）；待 round 14 复看（降并发后若是资源类问题应
+  一并好）。
+
+其他 round 13 已验证通过修复：firmware/tc-stats 的 distinfo 换产、inadyn/
+throttle 的 share/man 路径（inadyn 的 man5 漏了一个，这轮已补）、
+COMMIT_PACKAGES_ON_FAILURE=yes（迭代期保留已构建包，减每轮重建）。
 
 ## 8. 已知风险
 
