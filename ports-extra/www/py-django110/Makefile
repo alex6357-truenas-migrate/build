@@ -38,7 +38,7 @@ OPTIONS_GROUP_DATABASE=	PGSQL MYSQL SQLITE
 
 HTMLDOCS_DESC=	Install HTML documentation (requires Sphinx)
 
-PLIST_FILES=	man/man1/django-admin.1.gz
+PLIST_FILES=	share/man/man1/django-admin.1.gz
 
 HTMLDOCS_BUILD_DEPENDS=	${PYTHON_PKGNAMEPREFIX}sphinx>0:textproc/py-sphinx@${FLAVOR}
 PGSQL_RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}psycopg2>0:databases/py-psycopg2@${FLAVOR}

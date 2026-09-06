@@ -16,7 +16,7 @@ USE_GITHUB=	yes
 GH_ACCOUNT=	amotin
 GH_TAGNAME=	a88e88f
 
-PLIST_FILES=	sbin/sedutil-cli man/man8/sedutil-cli.8.gz
+PLIST_FILES=	sbin/sedutil-cli share/man/man8/sedutil-cli.8.gz
 
 do-build:
 	(cd ${WRKSRC}/freebsd/CLI/ && gmake)

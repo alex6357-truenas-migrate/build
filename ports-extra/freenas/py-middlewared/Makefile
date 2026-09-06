@@ -10,10 +10,13 @@ MAINTAINER=     dev@ixsystems.com
 COMMENT=        FreeNAS Middleware Daemon
 
 USES=		python
-USE_PYTHON=	autoplist distutils
+USE_PYTHON=	autoplist pep517
 EXTRACT_ONLY=
 
-BUILD_DEPENDS= ${PYTHON_PKGNAMEPREFIX}fastentrypoints>0:devel/py-fastentrypoints@${PY_FLAVOR} \
+# 15.1: distutils 已从 python3.12 stdlib 删除;fastentrypoints 在 py3.12 下必崩
+# (先删干净,run 期谁真缺到时以 setup.cfg install_requires 体现),pep517 路径即可
+BUILD_DEPENDS= ${PYTHON_PKGNAMEPREFIX}setuptools>0:devel/py-setuptools@${PY_FLAVOR} \
+		${PYTHON_PKGNAMEPREFIX}wheel>0:devel/py-wheel@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}Babel>0:devel/py-babel@${PY_FLAVOR}
 RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}ws4py>0:www/py-ws4py@${PY_FLAVOR} \
 		${PYTHON_PKGNAMEPREFIX}aiohttp>0:www/py-aiohttp@${PY_FLAVOR} \

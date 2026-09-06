@@ -12,8 +12,10 @@ VALID_CATEGORIES+= freenas
 MAINTAINER=	dev@ixsystems.com
 COMMENT=	Python wrappers for various BSD interfaces
 
-# 构建期源码位置（由 build/ports』skeleton-jail 副载）
+# 构建期源码位置（nas-source-bind 把 work/py-bsd 绑进 /usr/nas_source/py-bsd）
 WRKSRC=		/usr/nas_source/py-bsd
+# 源码不从 distfile 来（无制品可解；与 pipewatcher 同一的签名模式）
+EXTRACT_ONLY=
 
 USES=		python
 USE_PYTHON=	autoplist pep517

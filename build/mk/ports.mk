@@ -27,11 +27,8 @@ POUDRIERE_BASE?=	${OBJS}/poudriere
 # 生成 poudriere 环境（etc 根 + make.conf + 树 + jail 注册）
 poudriere-setup: ${WORK_PORTS}/.build-ports-merged ${POUDRIERE_JAIL_SRC_TAR}
 	mkdir -p ${POUDRIERE_ETC} ${POUDRIERE_ETC}/poudriere.d
-	_nas_nullfs=$$(cd ${WORK_ROOT}/middleware/src && ls) && \
-	_nas_nullfs=$$(for d in $$_nas_nullfs; do printf '/usr/nas_source/%s ' "$$d"; done; \
-		printf '/usr/nas_source/py-bsd /usr/nas_source/py-licenselib') && \
 	sed -e 's|@@BASEFS@@|${POUDRIERE_BASE}|g' \
-	    -e "s|@@NAS_NULLFS@@|$$_nas_nullfs|g" \
+	    -e "s|@@NAS_NULLFS@@||g" \
 	    ${CONF}/poudriere.conf.tmpl > ${POUDRIERE_ETC}/poudriere.conf
 	cp ${CONF}/pkg-make.conf ${POUDRIERE_ETC}/poudriere.d/make.conf
 	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere ports -l -q 2>/dev/null | \
@@ -54,26 +51,18 @@ skeleton-jail: world
 	mkdir -p ${JAIL_ROOT}/usr/src
 	rm -rf ${JAIL_ROOT}/usr/src/sys
 	cp -Rp ${WORK_SRC}/sys ${JAIL_ROOT}/usr/src/sys
-
-# nas_source 绑定：freenas/py-middlewared 等 port 的 WRKSRC=/usr/nas_source/<repo>
-# host 侧把 work/<repo> 以 nullfs(ro) 绑进 /usr/nas_source/<repo>，
-# poudriere 经 NULLFS_PATHS 传入 jail（13.3 core-build 同款目录协定）。
-nas-source-bind:
-	mkdir -p /usr/nas_source
+	# nas_source 同样复制进镜像：NULLFS_PATHS 经 ref jail 持久挂载，
+	# 中途 rebinding host 不会刷新 ref 的旧 vnode（13 轮实测 jail 内空目录）。
+	rm -rf ${JAIL_ROOT}/usr/nas_source
+	mkdir -p ${JAIL_ROOT}/usr/nas_source
 	for d in $$(cd ${WORK_ROOT}/middleware/src && ls); do \
-		[ -d /usr/nas_source/$$d ] || mkdir /usr/nas_source/$$d; \
-		mount | grep -q " on /usr/nas_source/$$d " || \
-			mount_nullfs -o ro ${WORK_ROOT}/middleware/src/$$d /usr/nas_source/$$d; \
+		cp -Rp ${WORK_ROOT}/middleware/src/$$d ${JAIL_ROOT}/usr/nas_source/$$d; \
 	done
-	[ -d /usr/nas_source/py-bsd ] || mkdir /usr/nas_source/py-bsd
-	mount | grep -q " on /usr/nas_source/py-bsd " || \
-		mount_nullfs -o ro ${WORK_ROOT}/py-bsd /usr/nas_source/py-bsd
-	[ -d /usr/nas_source/py-licenselib ] || mkdir /usr/nas_source/py-licenselib
-	mount | grep -q " on /usr/nas_source/py-licenselib " || \
-		mount_nullfs -o ro ${WORK_ROOT}/licenselib /usr/nas_source/py-licenselib
+	cp -Rp ${WORK_ROOT}/py-bsd ${JAIL_ROOT}/usr/nas_source/py-bsd
+	cp -Rp ${WORK_ROOT}/licenselib ${JAIL_ROOT}/usr/nas_source/py-licenselib
 
 # 批量构建全部 port
-ports-bulk: nas-source-bind poudriere-setup
+ports-bulk: poudriere-setup
 	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere bulk -w -J ${MAKE_JOBS} \
 		-j ${POUDRIERE_JAIL} -p ${POUDRIERE_TREE} \
 		-f ${CONF}/ports.list

@@ -1,5 +1,5 @@
 # poudriere.conf.tmpl — build 的 poudriere 配置模板
-# 占位符 @@BASEFS@@ 由 mk/ports.mk 的 poudriere-setup 替换。
+# 占位符 @@BASEFS@@ （以及历史遗稿 @@NAS_NULLFS@@，恒展开为空）由 mk/ports.mk 的 poudriere-setup 替换。
 
 NO_ZFS=yes
 ZPOOL=zroot
@@ -13,14 +13,11 @@ ALLOW_NETWORK_ACCESS=all	# 首跑放行网络（dist 预不全会 fail:fetch）�
 CHECK_CHANGED_OPTIONS=yes
 CHECK_CHANGED_DEPS=yes
 ATOMIC_PACKAGE_REPOSITORY=yes
-COMMIT_PACKAGES_ON_FAILURE=no
+COMMIT_PACKAGES_ON_FAILURE=yes
 KEEP_OLD_PACKAGES=yes
 KEEP_OLD_PACKAGES_COUNT=2
 
-# 私货源码 mount：freenas/py-middlewared 等 port 的 WRKSRC 指向 /usr/nas_source/*
-# （13.3 同款机制；host 侧由 ports.mk nas-source-bind 目标 mount_nullfs 绑定）。
-# /usr/src 一道挂：kmod 类 ports（如 filesystems/openzfs-kmod）需在 jail 里
-# 看见内核源码。注意我们 VM 上 /usr/src 就是打过补丁的 work/src 本体。
-# nullfs 不透传嵌套 mount,每个子目录单独列;@@NAS_NULLFS@@ 由 ports.mk 展开。
-# 注: /usr/src 不走 NULLFS——15.1 实测进 ref jail 报 EDEADLK;改为拷入 jail.txz
+# 私货源与内核源码统一拷进 jail 镜像（mk/ports.mk skeleton-jail）：
+# NULLFS 在 15.1 有双重坑——/usr/src 直挂 EDEADLK；nas_source 经 ref jail
+# 持久挂载后 host 侧 rebinding 不生效（13 轮实测 jail 内空目录）。
 NULLFS_PATHS="/rescue /usr/share /usr/tests /usr/lib32 @@NAS_NULLFS@@"
