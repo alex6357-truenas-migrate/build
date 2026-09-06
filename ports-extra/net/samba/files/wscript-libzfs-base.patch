@@ -1,0 +1,13 @@
+--- source3/wscript.orig
++++ source3/wscript
+@@ -1711,5 +1711,10 @@
+                 '/usr/include/libzfs/sys',
+                 '/usr/include/libzfs/sys/fs',
+             ]
++        elif os.path.exists('/usr/include/libzfs.h'):
++            # FreeBSD 15.x base OpenZFS: 头文件扁平安装在 /usr/include
++            conf.env['CPPPATH_ZFS'] = [
++                '/usr/include',
++            ]
+         else:
+             Logs.error('''No availalbe ZFS''')
