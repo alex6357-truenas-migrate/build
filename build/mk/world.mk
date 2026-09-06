@@ -20,7 +20,10 @@ _NOCLEAN=	NOCLEAN=YES
 .endif
 
 # 把 build/run/boot 三档 src.conf 叠成一份
-${SRC_MAKE_CONF}:
+# 依赖源文件清单：conf/src.conf* 任一改（如删 WITHOUT_ZFS=no）必须重新合成，
+# 否则清变更不生效（roun14 实测 src.conf.merged 残留 WITHOUT_ZFS,world/
+# jail 全无 ZFS 库）。
+${SRC_MAKE_CONF}: ${CONF}/src.conf.build ${CONF}/src.conf.run
 	mkdir -p ${OBJS}
 	cat ${CONF}/src.conf.build ${CONF}/src.conf.run > ${SRC_MAKE_CONF}
 

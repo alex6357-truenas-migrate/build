@@ -95,7 +95,11 @@ RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}ws4py>0:www/py-ws4py@${PY_FLAVOR} \
 
 USE_RC_SUBR=	middlewared
 
-WRKSRC?=/usr/nas_source/middlewared
+WRKSRC?=${WRKDIR}/src
+
+post-extract:
+	${CP} -Rp /usr/nas_source/middlewared ${WRKSRC}
+	${CHMOD} -R ugo+rwX ${WRKSRC}
 
 checksum fetch:
 	echo ${.TARGET} not needed because building direct

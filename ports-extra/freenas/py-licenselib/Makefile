@@ -14,7 +14,12 @@ USES=		python
 USE_PYTHON=	autoplist distutils
 
 EXTRACT_ONLY=
-WRKSRC?=/usr/nas_source/py-licenselib
+# jail 镜像 /usr/nas_source 为只读，复制入可写工作区(见 ports/extra 同行先例)
+WRKSRC?=${WRKDIR}/src
+
+post-extract:
+	${CP} -Rp /usr/nas_source/py-licenselib ${WRKSRC}
+	${CHMOD} -R ugo+rwX ${WRKSRC}
 
 # no checksum, we just used git!
 checksum fetch:

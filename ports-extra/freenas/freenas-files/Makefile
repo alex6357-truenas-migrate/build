@@ -22,7 +22,12 @@ FREEBSD_SRCTOP=/usr/src
 PLIST_SUB=	MACHINE_ARCH=${MACHINE_ARCH}
 
 EXTRACT_ONLY=
-WRKSRC=/usr/nas_source
+# jail 镜像 /usr/nas_source 只读；本 port 编 winacl,需可写,整树后拷入
+WRKSRC=${WRKDIR}/src
+
+post-extract:
+	${CP} -Rp /usr/nas_source ${WRKSRC}
+	${CHMOD} -R ugo+rwX ${WRKSRC}
 
 SUB_FILES=	pkg-install
 
