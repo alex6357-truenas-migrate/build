@@ -62,8 +62,10 @@ skeleton-jail: world
 	cp -Rp ${WORK_ROOT}/licenselib ${JAIL_ROOT}/usr/nas_source/py-licenselib
 
 # 批量构建全部 port
+# builder 并发别用满 ncpu: -J 20 时 rust+node+llvm 同开必 OOM(实测 node24 was killed)
+POUDRIERE_MAX_JOBS?=	10
 ports-bulk: poudriere-setup
-	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere bulk -w -J ${MAKE_JOBS} \
+	POUDRIERE_ETC=${POUDRIERE_ETC} poudriere bulk -w -J ${POUDRIERE_MAX_JOBS} \
 		-j ${POUDRIERE_JAIL} -p ${POUDRIERE_TREE} \
 		-f ${CONF}/ports.list
 

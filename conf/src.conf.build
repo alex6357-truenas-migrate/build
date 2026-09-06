@@ -15,7 +15,8 @@ WITHOUT_IPFILTER=yes
 WITHOUT_LPR=yes
 WITHOUT_SENDMAIL=yes
 WITHOUT_SYSCONS=yes
-WITHOUT_ZFS=no             # base OpenZFS 2.4.2 仍编（13.3 起我们用 rools openzfs port）
+# 注：不写 WITHOUT_ZFS=no——src.conf 里 WITHOUT_* 只要被定义(无论值)就关闭
+# 该特性(见 src.conf(5) "values are ignored")；要保留 ZFS 就是完全不出现。
 
 # ===== 显式强化（非 WITHOUT_*） =====
 CFLAGS+=-DNS_REREAD_CONF
