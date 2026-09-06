@@ -22,7 +22,6 @@ IGNORE_NONTHREAD_PYTHON=	needs port lang/python${PYTHON_SUFFIX} to be build with
 CONFLICTS_INSTALL?=		samba4-4.0.* samba4[1-79]-4.* p5-Parse-Pidl-4.*
 
 EXTRA_PATCHES+=			${PATCHDIR}/documentation.patch:-p1
-EXTRA_PATCHES+=			${PATCHDIR}/wscript_changes.patch:-p1
 
 # base OpenZFS 头文件扁平布局补丁（truenas fork 的 wscript 只认 openzfs-port 布局 /usr/(local/)include/{libspl,libzfs}）
 EXTRA_PATCHES+=			${PATCHDIR}/wscript-libzfs-base.patch:-p1
