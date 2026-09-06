@@ -94,7 +94,7 @@ SUB_LIST+=			PKGCONFIGDIR=${PKGCONFIGDIR_REL}
 # Options
 OPTIONS_SUB=			yes
 
-OPTIONS_DEFINE=			ADS DEBUG DOCS FAM LDAP LIBZFS WSDD\
+OPTIONS_DEFINE=			ADS DEBUG DOCS LDAP LIBZFS WSDD\
 				QUOTAS SYSLOG UTMP PROFILE
 # Make those default options
 OPTIONS_DEFAULT:=		${OPTIONS_DEFINE}
@@ -114,7 +114,6 @@ ADS_DESC=			Active Directory client(implies LDAP)
 AESNI_DESC=			Accelerated AES crypto functions(amd64 only)
 CLUSTER_DESC=			Clustering
 DEVELOPER_DESC=			With developer framework
-FAM_DESC=			File Alteration Monitor
 GPGME_DESC=			GpgME
 LDAP_DESC=			LDAP client
 LIBZFS_DESC=			LibZFS
@@ -237,8 +236,7 @@ DEVELOPER_VARS_OFF=		GDB_CMD=true
 CUPS_CONFIGURE_ENABLE=		cups iprint
 CUPS_LIB_DEPENDS=		libcups.so:print/cups
 # https://bugzilla.samba.org/show_bug.cgi?id=9545
-FAM_USES=			fam
-FAM_CONFIGURE_WITH=		fam
+# FAM 已整除：2026Q3 删了 USES=fam，上游 gamin 同步废弃，不再提供 FAM option。
 
 PROFILE_CONFIGURE_WITH=		profiling-data
 

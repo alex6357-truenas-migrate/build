@@ -23,7 +23,7 @@ post-extract:
 
 USES=		python
 USE_PYTHON=	autoplist pep517
-BUILD_DEPENDS=	cython>0:lang/cython \
+BUILD_DEPENDS=	cython>0:lang/cython@${PY_FLAVOR} \
 	${PYTHON_PKGNAMEPREFIX}setuptools>0:devel/py-setuptools@${PY_FLAVOR} \
 	${PYTHON_PKGNAMEPREFIX}wheel>0:devel/py-wheel@${PY_FLAVOR}
 

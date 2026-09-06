@@ -13,6 +13,7 @@ USES=		python:3.6+
 USE_PYTHON=	autoplist distutils
 USE_GITHUB=	yes
 GH_ACCOUNT=	alex6357-truenas-migrate
+GH_PROJECT=	py-zettarepl
 GH_TAGNAME=	60ade6005d79771ffc0b3922d376a590f8602484
 
 RUN_DEPENDS=	${PYTHON_PKGNAMEPREFIX}coloredlogs>0:devel/py-coloredlogs@${PY_FLAVOR} \
