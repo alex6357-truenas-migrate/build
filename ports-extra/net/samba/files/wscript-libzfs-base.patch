@@ -1,8 +1,8 @@
 diff --git a/source3/wscript b/source3/wscript
-index 5431e3b..8de6b2e 100644
+index 5431e3b..6a96cdc 100644
 --- a/source3/wscript
 +++ b/source3/wscript
-@@ -1711,6 +1711,13 @@ int main(void) {
+@@ -1711,6 +1711,11 @@ int main(void) {
                  '/usr/include/libzfs/sys',
                  '/usr/include/libzfs/sys/fs',
              ]
@@ -10,8 +10,6 @@ index 5431e3b..8de6b2e 100644
 +            # FreeBSD base OpenZFS (15.x): headers installed flat in /usr/include
 +            conf.env['CPPPATH_ZFS'] = [
 +                '/usr/include',
-+                os.environ.get('SRC_BASE', '/usr/src') + '/sys/contrib/openzfs/include',
-+                os.environ.get('SRC_BASE', '/usr/src') + '/sys/contrib/openzfs/include/sys',
 +            ]
          else:
              Logs.error('''No availalbe ZFS''')
