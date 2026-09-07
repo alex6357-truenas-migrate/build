@@ -328,6 +328,8 @@ SUB_LIST+=			SAMBA4_PYTHON2="@comment " SAMBA4_PYTHON3="@comment "
 USES+=				python:3.4+
 PLIST_SUB+=			SAMBA4_PYTHON3=""
 SUB_LIST+=			SAMBA4_PYTHON3=""
+# %%PYTHON_EXT_SUFFIX%%(.cpython-311):python.mk 给有带 flavor 的 port 用,这里 USES=python:3.4+ 不带 flavor
+PLIST_SUB+=			PYTHON_EXT_SUFFIX=${PYTHON_EXT_SUFFIX}
 
 .if !defined(SAMBA4_BUNDLED_TALLOC)
 SAMBA4_BUNDLED_LIBS+=		!pytalloc-util
