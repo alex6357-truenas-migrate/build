@@ -390,6 +390,13 @@ PORTDOCS=			README.FreeBSD
 post-extract:
 				@${RM} -r ${WRKSRC}/pidl/lib/Parse/Yapp
 
+# base OpenZFS 头文件扁平安装在 /usr/include,truenas fork 按 openzfs-port
+# 布局 include <libzfs/sys/nvpair.h> / <libzfs/libzfs.h>(smb_libzfs.c);
+# 用一个软链接把两种布局桥起来(round19 实测 fatal: libzfs/sys/nvpair.h not found)。
+post-extract:
+	@${MKDIR} -p ${PREFIX}/include
+	@${LN} -sfn /usr/include ${PREFIX}/include/libzfs
+
 post-patch:
 				@${REINPLACE_CMD} -e 's|$${PKGCONFIGDIR}|${PKGCONFIGDIR}|g' \
 					${PATCH_WRKSRC}/buildtools/wafsamba/pkgconfig.py
