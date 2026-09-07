@@ -302,7 +302,8 @@ WANT_EXP_MODULES+=	vfs_zfs_space vfs_ixnas vfs_shadow_copy_zfs vfs_noacl vfs_noa
 SAMBA4_MODULES+=	vfs_zfs_space vfs_ixnas vfs_shadow_copy_zfs vfs_noacl vfs_noacl vfs_tmprotect vfs_zfs_fsrvp vfs_aio_fbsd
 PLIST_SUB+=		LIBZFS=""
 .else
-CONFIGURE_ARGS+=	--without-libzfs
+# truenas fork 只定义 --with-libzfs,不定义 --without-libzfs(该 flag 默认已关,
+# 显式传会 waf: error: no such option)
 PLIST_SUB+=		LIBZFS="@comment "
 .endif
 
