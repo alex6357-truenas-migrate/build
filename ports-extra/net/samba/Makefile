@@ -77,6 +77,8 @@ CONFIGURE_ARGS+=		--mandir="${MANPREFIX}/man" \
 CONFIGURE_ENV+=			PTHREAD_LDFLAGS="-lpthread"
 CFLAGS+=                        -D_ACL_PRIVATE
 CFLAGS+=                        -D_FREEBSD_LIBZFS
+# fork 源码里 guard 名是 FREEBSD_LIBZFS(不带下划线),两个都带
+CFLAGS+=                        -DFREEBSD_LIBZFS
 CPPFLAGS+=			-I${LOCALBASE}/include
 LDFLAGS+=			-L${LOCALBASE}/lib
 LLD_UNSAFE=			yes
