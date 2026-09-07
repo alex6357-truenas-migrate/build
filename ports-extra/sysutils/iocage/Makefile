@@ -32,9 +32,12 @@ GH_PROJECT=	iocage
 GH_TAGNAME=	d8b3d7e11256db59a98c588259eec5637ec92123
 
 USES=		python
-USE_PYTHON=	autoplist pep517
-BUILD_DEPENDS=	${PYTHON_PKGNAMEPREFIX}setuptools>0:devel/py-setuptools@${PY_FLAVOR} \
-	${PYTHON_PKGNAMEPREFIX}wheel>0:devel/py-wheel@${PY_FLAVOR}
+# iocage setup.py 是双 setup()+fastentrypoints 的远古形态,装 pep517
+# (py-build/py-installer)下 build metadata 阶段会一次跑两个 setup(),
+# 后一个赢下文的 stage_dir 顺序乱→round18 实测 bdist_wheel 报
+# "could not create build/bdist.../iocage_cli/export.py"。回 distutils
+# 传统装(middleware/ports-extra 里 py-zettarepl 同款)。
+USE_PYTHON=	autoplist distutils
 
 # fastentrypoints hack 已随 pep517 迁移删除；LICENSE 若在仓库顶层缺失请改 files/
 LICENSE_FILE=	${WRKSRC}/LICENSE
