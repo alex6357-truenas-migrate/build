@@ -104,6 +104,11 @@ OPTIONS_DEFINE=			ADS DEBUG DOCS LDAP LIBZFS WSDD\
 				QUOTAS SYSLOG UTMP PROFILE
 # Make those default options
 OPTIONS_DEFAULT:=		${OPTIONS_DEFINE}
+# 15.1 过渡:vfs_ixnas/smb_libzfs 依赖的 openzfs-port 头文件布局/typedefs
+# (uint_t/boolean_t...)在 base OpenZFS 2.4.2 已经缺失,用户态还不能单独 include <sys/nvpair.h>。
+# LIBZFS 默认为 OFF (params:-freenas pin 上游带;zfsacl 不受影响,VFS 还在 vfs_zfsacl
+# 默认链里;ixnas/shadow_copy_zfs/zfs_space/zfs_fsrvp/tmprotect 等 vfs_ixnas 族暂时不上)。
+OPTIONS_DEFAULT:=		${OPTIONS_DEFAULT:NLIBZFS}
 # This shouldn't be default in the release
 OPTIONS_DEFINE+=		DEVELOPER MANDOC
 
