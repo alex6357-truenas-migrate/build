@@ -25,6 +25,7 @@ EXTRA_PATCHES+=			${PATCHDIR}/documentation.patch:-p1
 
 # base OpenZFS 头文件扁平布局补丁（truenas fork 的 wscript 只认 openzfs-port 布局 /usr/(local/)include/{libspl,libzfs}）
 EXTRA_PATCHES+=			${PATCHDIR}/wscript-libzfs-base.patch:-p1
+EXTRA_PATCHES+=			${PATCHDIR}/smb-libzfs-includes.patch:-p1
 
 SAMBA4_BASENAME=		samba
 SAMBA4_PORTNAME=		${SAMBA4_BASENAME}4
@@ -389,11 +390,6 @@ PORTDOCS=			README.FreeBSD
 
 post-extract:
 				@${RM} -r ${WRKSRC}/pidl/lib/Parse/Yapp
-# base OpenZFS 头文件扁平安装在 /usr/include,truenas fork 按 openzfs-port
-# 布局 include <libzfs/sys/nvpair.h> / <libzfs/libzfs.h>(smb_libzfs.c);
-# 用一个软链接把两种布局桥起来(round19 实测 fatal: libzfs/sys/nvpair.h not found)。
-	@${MKDIR} -p ${PREFIX}/include
-	@${LN} -sfn /usr/include ${PREFIX}/include/libzfs
 
 post-patch:
 				@${REINPLACE_CMD} -e 's|$${PKGCONFIGDIR}|${PKGCONFIGDIR}|g' \

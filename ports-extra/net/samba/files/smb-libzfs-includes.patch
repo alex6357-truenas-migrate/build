@@ -1,0 +1,15 @@
+diff --git a/source3/modules/smb_libzfs.c b/source3/modules/smb_libzfs.c
+index afa7da7..a4e9525 100644
+--- a/source3/modules/smb_libzfs.c
++++ b/source3/modules/smb_libzfs.c
+@@ -52,8 +52,8 @@ struct mntent
+   };
+ #endif
+ #endif /* FREEBSD_LIBZFS */
+-#include <libzfs/sys/nvpair.h>
+-#include <libzfs/libzfs.h>
++#include <sys/nvpair.h>
++#include <libzfs.h>
+ #include <fnmatch.h>
+ #include "lib/util/time.h"
+ #include "lib/util/debug.h"
